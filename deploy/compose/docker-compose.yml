@@ -32,6 +32,9 @@ services:
       AICP_OPA_URL: http://opa:8181
       AICP_OPA_ENABLED: "true"
       AICP_ORG_NAME: ${AICP_ORG_NAME:-Consultant Works}
+      AICP_ADMIN_PASSWORD: ${AICP_ADMIN_PASSWORD:-}
+      AICP_SESSION_SECRET: ${AICP_SESSION_SECRET:-}
+      AICP_COOKIE_SECURE: ${AICP_COOKIE_SECURE:-false}
     ports:
       - "8000:8000"
     healthcheck:
@@ -111,7 +114,41 @@ services:
     command: ["uvicorn", "mock_upstream:app", "--host", "0.0.0.0", "--port", "9999"]
     profiles: ["demo"]
 
+  # ---- SIEM forwarder. Ships the audit store to Splunk / Sentinel / syslog CEF / file. ----
+  forwarder:
+    build:
+      context: ../..
+      dockerfile: forwarder/Dockerfile
+    environment:
+      AICP_FWD_API_URL: http://api:8000
+      AICP_FWD_INGEST_TOKEN: ${AICP_INGEST_TOKEN:-dev-ingest-token-change-me}
+      AICP_FWD_OUTPUTS: ${AICP_FWD_OUTPUTS:-file}
+      AICP_FWD_POLL_SECONDS: ${AICP_FWD_POLL_SECONDS:-10}
+      AICP_FWD_CHECKPOINT_FILE: /state/forwarder.checkpoint.json
+      AICP_FWD_FILE_PATH: /state/aicp-forwarded.jsonl
+      AICP_FWD_SPLUNK_URL: ${AICP_FWD_SPLUNK_URL:-}
+      AICP_FWD_SPLUNK_TOKEN: ${AICP_FWD_SPLUNK_TOKEN:-}
+      AICP_FWD_SPLUNK_INDEX: ${AICP_FWD_SPLUNK_INDEX:-}
+      AICP_FWD_SPLUNK_VERIFY_TLS: ${AICP_FWD_SPLUNK_VERIFY_TLS:-true}
+      AICP_FWD_SENTINEL_DCE_URL: ${AICP_FWD_SENTINEL_DCE_URL:-}
+      AICP_FWD_SENTINEL_DCR_ID: ${AICP_FWD_SENTINEL_DCR_ID:-}
+      AICP_FWD_SENTINEL_STREAM: ${AICP_FWD_SENTINEL_STREAM:-Custom-AICPAudit_CL}
+      AICP_FWD_SENTINEL_TENANT_ID: ${AICP_FWD_SENTINEL_TENANT_ID:-}
+      AICP_FWD_SENTINEL_CLIENT_ID: ${AICP_FWD_SENTINEL_CLIENT_ID:-}
+      AICP_FWD_SENTINEL_CLIENT_SECRET: ${AICP_FWD_SENTINEL_CLIENT_SECRET:-}
+      AICP_FWD_SYSLOG_HOST: ${AICP_FWD_SYSLOG_HOST:-}
+      AICP_FWD_SYSLOG_PORT: ${AICP_FWD_SYSLOG_PORT:-514}
+      AICP_FWD_SYSLOG_PROTOCOL: ${AICP_FWD_SYSLOG_PROTOCOL:-tcp}
+      AICP_FWD_SYSLOG_TLS: ${AICP_FWD_SYSLOG_TLS:-false}
+    volumes:
+      - forwarder-state:/state
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   pgdata:
   collector-state:
   gateway-state:
+  forwarder-state:

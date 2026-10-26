@@ -1,0 +1,56 @@
+{% extends "base.html" %}{% block body %}
+{% set s = system %}
+<p><a href="/inventory" class="muted">&larr; Inventory</a></p>
+<h1>{% if s %}{{ s.display_name }} <code class="muted" style="font-size:13px">{{ s.key }}</code>
+  <span class="badge {{ s.governance_state }}">{{ s.governance_state }}</span>{% else %}Declare an AI system{% endif %}</h1>
+{% if not s %}<p class="muted">Use this for AI tools no log source can see yet (a vendor's embedded assistant, a pilot, a tool someone admitted to using). It enters the inventory as <em>declared</em> and flips to <em>observed</em> automatically once a collector or the gateway sees it.</p>{% endif %}
+{% if error %}<p class="bad">{{ error }}</p>{% endif %}
+<div style="display:grid;grid-template-columns:minmax(320px,520px) 1fr;gap:24px;align-items:start">
+<form method="post" action="{% if s %}/inventory/{{ s.key }}{% else %}/inventory/new{% endif %}" class="ctl">
+{% macro field(label, name, value, placeholder='') %}
+<label class="muted" style="font-size:12px">{{ label }}</label>
+<input name="{{ name }}" value="{{ value or '' }}" placeholder="{{ placeholder }}" {% if not can_edit %}disabled{% endif %} style="width:100%;margin:4px 0 12px;padding:8px;border-radius:6px;border:1px solid var(--line);background:#0b0f14;color:var(--text)">
+{% endmacro %}
+{% macro tri(label, name, value, yes, no) %}
+<label class="muted" style="font-size:12px">{{ label }}</label>
+<div style="margin:4px 0 12px;display:flex;gap:14px">
+<label><input type="radio" name="{{ name }}" value="yes" {% if value is sameas true %}checked{% endif %} {% if not can_edit %}disabled{% endif %}> {{ yes }}</label>
+<label><input type="radio" name="{{ name }}" value="no" {% if value is sameas false %}checked{% endif %} {% if not can_edit %}disabled{% endif %}> {{ no }}</label>
+<label><input type="radio" name="{{ name }}" value="unknown" {% if value is none %}checked{% endif %} {% if not can_edit %}disabled{% endif %}> Not decided</label>
+</div>
+{% endmacro %}
+{% if not s %}{{ field('System key (lowercase, e.g. vendor.product)', 'key', '', 'adobe.acrobat-ai') }}{% endif %}
+{{ field('Display name', 'display_name', s.display_name if s else '') }}
+{{ field('Vendor', 'vendor', s.vendor if s else '') }}
+<label class="muted" style="font-size:12px">Hosting</label>
+<select name="hosting" {% if not can_edit %}disabled{% endif %} style="width:100%;margin:4px 0 12px;padding:8px;border-radius:6px;border:1px solid var(--line);background:#0b0f14;color:var(--text)">
+{% for h, lbl in [('external_saas','External SaaS (vendor cloud, shared)'),('cloud_tenant','Our cloud tenant (e.g. M365 Copilot, Azure OpenAI)'),('on_prem','On-premises / self-hosted'),('unknown','Unknown')] %}
+<option value="{{ h }}" {% if s and s.hosting == h %}selected{% endif %}>{{ lbl }}</option>{% endfor %}
+</select>
+{{ tri('Approved for organizational use?', 'approved', s.approved if s else none, 'Approved', 'Not approved') }}
+{{ tri('Can CUI reach this system?', 'cui_in_scope', s.cui_in_scope if s else none, 'Yes, in CUI scope', 'No, CUI must not flow here') }}
+{{ field('Owner (person or team accountable)', 'owner', s.owner if s else '') }}
+<label class="muted" style="font-size:12px">Notes (scoping rationale, DPA/contract refs, exceptions)</label>
+<textarea name="notes" rows="4" {% if not can_edit %}disabled{% endif %} style="width:100%;margin:4px 0 14px;padding:8px;border-radius:6px;border:1px solid var(--line);background:#0b0f14;color:var(--text)">{{ s.notes if s and s.notes else '' }}</textarea>
+{% if can_edit %}<button type="submit" style="padding:9px 16px;border-radius:6px;border:0;background:var(--accent);color:#fff;font-weight:600;cursor:pointer">{% if s %}Save{% else %}Declare system{% endif %}</button>
+{% else %}<p class="muted">Viewer role: read-only.</p>{% endif %}
+</form>
+{% if s %}
+<div>
+<h2>Facts</h2>
+<table><tr><td class="muted">First seen</td><td><code>{{ s.first_seen.strftime('%Y-%m-%d %H:%M') }}</code></td></tr>
+<tr><td class="muted">Last seen</td><td><code>{{ s.last_seen.strftime('%Y-%m-%d %H:%M') }}</code></td></tr>
+<tr><td class="muted">Events</td><td><a href="/events?ai_system={{ s.key }}">{{ s.event_count }}</a></td></tr>
+<tr><td class="muted">Sources</td><td>{% for src in s.sources %}<span class="badge">{{ src }}</span> {% endfor %}</td></tr></table>
+<h2>Change history</h2>
+{% if changes %}<table><tr><th>When</th><th>Who</th><th>Change</th></tr>
+{% for c in changes %}<tr><td><code>{{ c.timestamp[:16] }}</code></td><td>{{ c.actor.id }}</td><td class="muted">{{ c.decision.reason | replace('inventory update: ', '') }}</td></tr>{% endfor %}</table>
+{% else %}<p class="muted">No changes recorded yet.</p>{% endif %}
+<h2>Recent activity</h2>
+{% if recent %}<table><tr><th>Time</th><th>Type</th><th>Actor</th><th>Decision</th></tr>
+{% for e in recent %}<tr><td><code>{{ e.timestamp[:16] }}</code></td><td><code>{{ e.event_type }}</code></td><td>{{ e.actor.id or '—' }}</td>
+<td>{% if e.decision %}{{ e.decision.action }}{% else %}—{% endif %}</td></tr>{% endfor %}</table>{% else %}<p class="muted">None.</p>{% endif %}
+</div>
+{% endif %}
+</div>
+{% endblock %}

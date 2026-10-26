@@ -1,5 +1,6 @@
 -r api/requirements.txt
 -r collectors/requirements.txt
 -r gateway/requirements.txt
+-r forwarder/requirements.txt
 pytest>=8.3
 ruff>=0.6

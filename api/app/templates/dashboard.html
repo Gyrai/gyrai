@@ -3,7 +3,7 @@
 <div class="tiles">
 <div class="tile"><div class="n">{{ stats.total_events }}</div><div class="l">audit records</div></div>
 <div class="tile"><div class="n">{{ systems|length }}</div><div class="l">AI systems in inventory</div></div>
-<div class="tile"><div class="n {% if unapproved %}warn{% endif %}">{{ unapproved|length }}</div><div class="l">without recorded approval</div></div>
+<a class="tile" href="/inventory" style="text-decoration:none;color:inherit"><div class="n {% if unapproved %}warn{% endif %}">{{ unapproved|length }}</div><div class="l">without recorded approval</div></a>
 <div class="tile"><div class="n {% if stats.dlp_events %}bad{% endif %}">{{ stats.dlp_events }}</div><div class="l">events with flagged content</div></div>
 <div class="tile"><div class="n">{{ stats.advisory_would_act }}</div><div class="l">policy would have acted</div></div>
 </div>

@@ -33,6 +33,8 @@ jobs:
         with: { context: ., file: collectors/Dockerfile, push: false, tags: aicp-collectors:ci }
       - uses: docker/build-push-action@v6
         with: { context: ., file: gateway/Dockerfile, push: false, tags: aicp-gateway:ci }
+      - uses: docker/build-push-action@v6
+        with: { context: ., file: forwarder/Dockerfile, push: false, tags: aicp-forwarder:ci }
       # SBOM for the SSDF story. Uploaded as a build artifact.
       - uses: anchore/sbom-action@v0
         with: { image: aicp-api:ci, format: spdx-json, output-file: sbom-api.spdx.json }

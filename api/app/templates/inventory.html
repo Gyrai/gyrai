@@ -1,8 +1,8 @@
 {% extends "base.html" %}{% block body %}
-<h1>AI system inventory</h1>
-<p class="muted">Governed = traffic passes through the gateway. Observed = seen in tenant or network logs. Declared = registered manually, not yet observed. Edit approval and CUI scoping via <code>PATCH /api/v1/systems/{key}</code>.</p>
+<h1>AI system inventory {% if user and user.role == "admin" %}<a class="btn" href="/inventory/new" style="font-size:13px;margin-left:12px">+ Declare a system</a>{% endif %}</h1>
+<p class="muted">Governed = traffic passes through the gateway. Observed = seen in tenant or network logs. Declared = registered manually, not yet observed. Click a system to review it, set approval and CUI scoping, and assign an owner. Every change is recorded in the audit log.</p>
 <table><tr><th>System</th><th>State</th><th>Hosting</th><th>Approved</th><th>CUI in scope</th><th>Events</th><th>First seen</th><th>Last seen</th><th>Sources</th></tr>
-{% for s in systems %}<tr><td><a href="/events?ai_system={{ s.key }}">{{ s.display_name }}</a><br><code class="muted">{{ s.key }}</code></td>
+{% for s in systems %}<tr><td><a href="/inventory/{{ s.key }}">{{ s.display_name }}</a><br><code class="muted">{{ s.key }}</code></td>
 <td><span class="badge {{ s.governance_state }}">{{ s.governance_state }}</span></td><td>{{ s.hosting }}</td>
 <td>{% if s.approved %}<span class="good">yes</span>{% elif s.approved is none %}<span class="warn">unknown</span>{% else %}<span class="bad">no</span>{% endif %}</td>
 <td>{% if s.cui_in_scope %}<span class="warn">yes</span>{% elif s.cui_in_scope is none %}<span class="muted">unset</span>{% else %}no{% endif %}</td>

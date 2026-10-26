@@ -57,6 +57,20 @@ class AISystem(Base):
     sources: Mapped[list] = mapped_column(JSON, default=list)
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    username: Mapped[str] = mapped_column(String(128), primary_key=True)
+    password_hash: Mapped[str] = mapped_column(String(128))
+    role: Mapped[str] = mapped_column(String(16), default="admin")  # admin | viewer
+    display_name: Mapped[str | None] = mapped_column(String(256))
+    disabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_logins: Mapped[int] = mapped_column(Integer, default=0)
+
+
 def _make_engine(url: str):
     kwargs = {"future": True}
     if url.startswith("sqlite"):

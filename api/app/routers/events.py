@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..auth import require_user
 from ..config import settings
 from ..db import AuditEvent, get_db
 from ..ingest import IngestError, ingest_event, verify_chain
@@ -27,7 +28,7 @@ def post_events(events: list[dict], db: Session = Depends(get_db)):
     return {"accepted": accepted, "rejected": rejected}
 
 
-@router.get("/events")
+@router.get("/events", dependencies=[Depends(require_user)])
 def list_events(
     db: Session = Depends(get_db),
     limit: int = Query(100, le=1000),
@@ -48,7 +49,7 @@ def list_events(
     return [r.body for r in db.scalars(q.limit(limit))]
 
 
-@router.get("/events/stats")
+@router.get("/events/stats", dependencies=[Depends(require_user)])
 def stats(db: Session = Depends(get_db)):
     total = db.scalar(select(func.count(AuditEvent.seq))) or 0
     by_level = dict(db.execute(
@@ -70,6 +71,14 @@ def stats(db: Session = Depends(get_db)):
     }
 
 
-@router.get("/events/integrity")
+@router.get("/events/integrity", dependencies=[Depends(require_user)])
 def integrity(db: Session = Depends(get_db)):
     return verify_chain(db)
+
+
+@router.get("/events/stream", dependencies=[Depends(require_ingest_token)])
+def stream_events(after_seq: int = 0, limit: int = Query(500, le=5000), db: Session = Depends(get_db)):
+    """Cursor-based read for forwarders. Returns events with seq > after_seq in order,
+    plus the seq to resume from. Uses the machine token (forwarders are not people)."""
+    rows = db.scalars(select(AuditEvent).where(AuditEvent.seq > after_seq).order_by(AuditEvent.seq).limit(limit)).all()
+    return {"events": [{"seq": r.seq, **r.body} for r in rows], "next_after_seq": rows[-1].seq if rows else after_seq}

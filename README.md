@@ -13,6 +13,7 @@ schemas/audit-event.schema.json   the contract every component reads and writes
 api/                              FastAPI service: ingest, inventory, console, evidence export
 collectors/                       pull upstream logs -> schema events -> POST /api/v1/events
 gateway/                          OpenAI-compatible inline proxy: identify -> ingress -> forward -> egress -> audit
+forwarder/                        SIEM forwarder: audit store -> Splunk HEC / Sentinel / syslog CEF / file
 policies/                         OPA/Rego rules; advisory today, binding when the gateway ships
 evidence/mappings/                 control mappings (800-171 -> narrative templates)
 deploy/compose/                   single-box install (Postgres + OPA + API + collectors)
@@ -31,10 +32,10 @@ cp .env.example .env            # defaults are fine for local
 docker compose --profile demo up --build
 ```
 
-Open <http://localhost:8000>. The `demo` profile loads `samples/sample-events.jsonl` once. Pages:
+Open <http://localhost:8000>. **First login:** username `admin`; the password is printed once in `docker compose logs api` (or set `AICP_ADMIN_PASSWORD` in `.env` first). You'll be asked to change it. The `demo` profile loads `samples/sample-events.jsonl` once. Pages:
 
 - `/` dashboard: coverage by observation level, flagged content, policy "would have acted" count
-- `/inventory` every AI system seen, with governed / observed / declared state and approval + CUI scoping flags
+- `/inventory` every AI system seen, with governed / observed / declared state; click one to set approval, CUI scoping, owner and notes (every change is audited); "Declare a system" registers tools no log can see
 - `/events` the audit log, filterable, raw JSON per event
 - `/evidence` 800-171 control narratives generated from live data; download as Markdown or JSON
 - `/docs` the API
@@ -94,6 +95,23 @@ What the gateway does **not** do yet, by design: streaming responses are scanned
 6. **Repoint applications** to the gateway, still in monitor mode. Internal apps, scripts, and agent frameworks change one setting (base URL + a gateway key). Watch the "policy would have acted" count for a couple of weeks.
 7. **Flip to enforce.** `AICP_GW_MODE=enforce`. Blocks and masks begin; the evidence report's 3.1.3 and 3.13.1 narratives move from *partial* to *full*.
 
+## Console access and audit of the tool itself
+
+Local accounts (bcrypt, signed session cookie, lockout after 10 failures, 12-char minimum). Two roles: `admin` (edit inventory) and `viewer`. Every login, failed login, logout, password change and inventory edit is written to the audit store as an `ai.admin.change` event, so the control plane's own access is part of the evidence package (3.3.1, 3.3.2, CM-3). Collectors, the gateway and the forwarder authenticate with the machine token, not a session. Entra/Okta OIDC login is additive in 0.3; local accounts stay for air-gapped sites.
+
+## SIEM forwarding
+
+The forwarder reads the audit store in sequence order through `/api/v1/events/stream`, checkpoints after every batch *all* outputs accept, and retries otherwise, so a SIEM outage delays delivery but never drops records (AU-5). Outputs, selectable in `.env` (`AICP_FWD_OUTPUTS=splunk_hec,syslog_cef`):
+
+| Output | Format | Notes |
+|---|---|---|
+| `splunk_hec` | HEC JSON, sourcetype `aicp:audit` | set index, token; `SPLUNK_VERIFY_TLS=false` for self-signed |
+| `sentinel` | Logs Ingestion API → custom table `AICPAudit_CL` | needs DCE, DCR, and an Entra app with Monitoring Metrics Publisher on the DCR |
+| `syslog_cef` | CEF over TCP/TLS/UDP | QRadar, ArcSight, Elastic, Graylog, rsyslog; severity from policy action |
+| `file` | JSONL | air-gapped hand-off; also the default in the demo |
+
+Detection content (prompt-injection-then-tool-call, agent runaway, unapproved model, repeated CUI attempts) ships as SPL/KQL in a later release once a customer SIEM is in hand.
+
 ## The three design rules that make the gateway a drop-in later
 
 1. **One schema.** `observation_level` (`metadata_only` | `content_visible` | `enforced`) and `decision.mode` (`monitor` | `enforce`) are first-class fields. The evidence engine will never claim "full" strength for a control unless an `enforced` event backs it.
@@ -117,9 +135,8 @@ Then in the repo settings: protect `main` (require PR + passing CI), enable Depe
 
 ## Before the first paying customer
 
-- Replace the shared ingest token with OIDC (customer's Entra) for the console and mTLS or per-collector tokens for ingest.
+- Add OIDC (customer's Entra) on top of local accounts; mTLS or per-collector tokens for ingest; TLS in front of the console (`AICP_COOKIE_SECURE=true`).
 - Switch base images to a FIPS/STIG-able base (Iron Bank Python or Chainguard); sign images with cosign.
-- Add SIEM forwarding (OTel collector → Splunk HEC / Sentinel) so the customer's SOC sees the same events.
 - Retention policy and encrypted Postgres backups.
 - Write the one-page network requirements sheet (ports 443 out to `login.microsoftonline.com` and `graph.microsoft.com`; nothing inbound).
 
@@ -127,7 +144,8 @@ Then in the repo settings: protect `main` (require PR + passing CI), enable Depe
 
 | Milestone | Adds |
 |---|---|
-| 0.2 | Azure OpenAI + web gateway collectors, SIEM forwarder, OIDC console login |
+| 0.2 (done) | Console login + audit of the tool itself, inventory editing, SIEM forwarder |
+| 0.2.x | Azure OpenAI + web gateway collectors, M365 collector validated against a live tenant |
 | 0.3 | Anthropic Messages API + Azure OpenAI URL handling in the gateway, OIDC/JWT gateway keys, per-rule mode overrides |
 | 0.4 | MCP proxy for agent tool calls, human-in-the-loop approvals |
 | 0.5 | Presidio + local classifier DLP, streaming egress scanning |

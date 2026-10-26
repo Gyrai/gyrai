@@ -3,23 +3,32 @@ runs in air-gapped environments with no build step. Swap for React when a custom
 asks for it; every page reads only the /api/v1 endpoints."""
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..auth import require_user_page
 from ..config import settings
-from ..db import AISystem, AuditEvent, get_db
+from ..db import AISystem, AuditEvent, User, get_db
 from ..evidence import build_report, report_markdown
 from .events import stats as stats_endpoint
+from .inventory import apply_update, create_declared
 
-router = APIRouter(include_in_schema=False)
+router = APIRouter(include_in_schema=False, dependencies=[Depends(require_user_page)])
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
 
 
 def _ctx(request: Request, **kw):
-    return {"request": request, "product": settings.product_name, "org": settings.org_name, **kw}
+    from ..auth import current_user
+    from ..db import SessionLocal
+    db = SessionLocal()
+    try:
+        user = current_user(request, db)
+    finally:
+        db.close()
+    return {"request": request, "product": settings.product_name, "org": settings.org_name, "user": user, **kw}
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -65,3 +74,58 @@ def evidence_md(db: Session = Depends(get_db)):
 @router.get("/evidence/report.json")
 def evidence_json(db: Session = Depends(get_db)):
     return build_report(db)
+
+
+# ---------- inventory editing (HTML forms) ----------
+
+def _tri(v: str) -> bool | None:
+    return {"yes": True, "no": False}.get(v)
+
+
+@router.get("/inventory/new", response_class=HTMLResponse)
+def declare_form(request: Request, user: User = Depends(require_user_page)):
+    return templates.TemplateResponse(request, "system_edit.html", _ctx(request, system=None, error=None, can_edit=user.role == "admin"))
+
+
+@router.post("/inventory/new")
+def declare_submit(request: Request, key: str = Form(...), display_name: str = Form(""), vendor: str = Form(""),
+                   hosting: str = Form("unknown"), approved: str = Form("unknown"), cui_in_scope: str = Form("unknown"),
+                   owner: str = Form(""), notes: str = Form(""), user: User = Depends(require_user_page), db: Session = Depends(get_db)):
+    if user.role != "admin":
+        raise HTTPException(403, "admin role required")
+    key = key.strip().lower()
+    if db.get(AISystem, key):
+        ctx = _ctx(request, system=None, error=f"'{key}' already exists.", can_edit=True)
+        return templates.TemplateResponse(request, "system_edit.html", ctx, status_code=409)
+    create_declared(db, {"key": key, "display_name": display_name.strip() or key, "vendor": vendor.strip() or None, "hosting": hosting,
+                         "approved": _tri(approved), "cui_in_scope": _tri(cui_in_scope), "owner": owner.strip() or None,
+                         "notes": notes.strip() or None}, user.username)
+    return RedirectResponse(f"/inventory/{key}", status_code=303)
+
+
+@router.get("/inventory/{key}", response_class=HTMLResponse)
+def system_page(key: str, request: Request, user: User = Depends(require_user_page), db: Session = Depends(get_db)):
+    s = db.get(AISystem, key)
+    if not s:
+        raise HTTPException(404, "unknown system")
+    recent = db.scalars(select(AuditEvent).where(AuditEvent.ai_system == key).order_by(AuditEvent.seq.desc()).limit(20)).all()
+    changes = db.scalars(select(AuditEvent).where(AuditEvent.ai_system == key, AuditEvent.event_type == "ai.admin.change")
+                         .order_by(AuditEvent.seq.desc()).limit(10)).all()
+    return templates.TemplateResponse(request, "system_edit.html", _ctx(
+        request, system=s, error=None, can_edit=user.role == "admin",
+        recent=[r.body for r in recent], changes=[r.body for r in changes]))
+
+
+@router.post("/inventory/{key}")
+def system_submit(key: str, request: Request, display_name: str = Form(""), vendor: str = Form(""), hosting: str = Form("unknown"),
+                  approved: str = Form("unknown"), cui_in_scope: str = Form("unknown"), owner: str = Form(""), notes: str = Form(""),
+                  user: User = Depends(require_user_page), db: Session = Depends(get_db)):
+    if user.role != "admin":
+        raise HTTPException(403, "admin role required")
+    s = db.get(AISystem, key)
+    if not s:
+        raise HTTPException(404, "unknown system")
+    apply_update(db, s, {"display_name": display_name.strip() or s.key, "vendor": vendor.strip() or None, "hosting": hosting,
+                         "approved": _tri(approved), "cui_in_scope": _tri(cui_in_scope), "owner": owner.strip() or None,
+                         "notes": notes.strip() or None}, user.username)
+    return RedirectResponse(f"/inventory/{key}", status_code=303)
