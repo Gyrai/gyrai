@@ -1,0 +1,4 @@
+{
+  "gw-dev-key-alice": {"id": "alice@example-dib.com", "type": "human"},
+  "gw-dev-key-ops-agent": {"id": "svc-ops-agent", "type": "agent", "on_behalf_of": "ops-lead@example-dib.com"}
+}

@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% block body %}
+<h1>AI usage overview <span class="badge">monitor mode</span></h1>
+<div class="tiles">
+<div class="tile"><div class="n">{{ stats.total_events }}</div><div class="l">audit records</div></div>
+<div class="tile"><div class="n">{{ systems|length }}</div><div class="l">AI systems in inventory</div></div>
+<div class="tile"><div class="n {% if unapproved %}warn{% endif %}">{{ unapproved|length }}</div><div class="l">without recorded approval</div></div>
+<div class="tile"><div class="n {% if stats.dlp_events %}bad{% endif %}">{{ stats.dlp_events }}</div><div class="l">events with flagged content</div></div>
+<div class="tile"><div class="n">{{ stats.advisory_would_act }}</div><div class="l">policy would have acted</div></div>
+</div>
+<h2>Coverage by observation level</h2>
+<table><tr><th>Level</th><th>Events</th><th>Meaning</th></tr>
+<tr><td><span class="badge governed">enforced</span></td><td>{{ stats.by_observation_level.get('enforced',0) }}</td><td class="muted">Passed through the gateway; policy applied</td></tr>
+<tr><td><span class="badge observed">content_visible</span></td><td>{{ stats.by_observation_level.get('content_visible',0) }}</td><td class="muted">Content inspected by a collector; no enforcement</td></tr>
+<tr><td><span class="badge">metadata_only</span></td><td>{{ stats.by_observation_level.get('metadata_only',0) }}</td><td class="muted">Who used what, when; content not visible</td></tr></table>
+<h2>Recent flagged content</h2>
+{% if recent_dlp %}<table><tr><th>Time</th><th>Actor</th><th>AI system</th><th>Findings</th><th>Advisory</th></tr>
+{% for e in recent_dlp %}<tr><td><code>{{ e.timestamp[:19] }}</code></td><td>{{ e.actor.id or '—' }}</td><td>{{ e.target.ai_system }}</td>
+<td>{% for f in e.content.dlp_findings %}<span class="badge">{{ f.category }}×{{ f.count }}</span> {% endfor %}</td>
+<td>{% if e.decision %}<span class="badge {% if e.decision.action in ['block','mask'] %}bad{% endif %}">{{ e.decision.action }}</span>{% else %}<span class="muted">—</span>{% endif %}</td></tr>{% endfor %}</table>
+{% else %}<p class="muted">No flagged content yet.</p>{% endif %}
+{% endblock %}

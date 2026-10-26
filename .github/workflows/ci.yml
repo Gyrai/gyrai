@@ -1,0 +1,40 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: pytest -q
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: open-policy-agent/setup-opa@v2
+        with: { version: "0.69.0" }
+      - run: opa fmt --fail policies/
+      - run: opa test policies/ -v
+  build:
+    needs: [test, policy]
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/build-push-action@v6
+        with: { context: ., file: api/Dockerfile, push: false, tags: aicp-api:ci }
+      - uses: docker/build-push-action@v6
+        with: { context: ., file: collectors/Dockerfile, push: false, tags: aicp-collectors:ci }
+      - uses: docker/build-push-action@v6
+        with: { context: ., file: gateway/Dockerfile, push: false, tags: aicp-gateway:ci }
+      # SBOM for the SSDF story. Uploaded as a build artifact.
+      - uses: anchore/sbom-action@v0
+        with: { image: aicp-api:ci, format: spdx-json, output-file: sbom-api.spdx.json }
+      - uses: actions/upload-artifact@v4
+        with: { name: sbom, path: sbom-api.spdx.json }

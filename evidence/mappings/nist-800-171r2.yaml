@@ -1,0 +1,174 @@
+# Control mapping: which audit events and inventory facts are evidence for which
+# NIST SP 800-171 Rev 2 requirements (CMMC Level 2). Each entry says what the
+# monitoring product can honestly claim at each observation level.
+#
+# strength:  how far the evidence goes
+#   full     - the control objective is demonstrably met by this product's data
+#   partial  - supports the objective; other artifacts (policy, training) still required
+#   observe  - visibility only; proves the condition exists, not that it is controlled
+
+controls:
+  - id: "3.1.3"
+    name: "Control the flow of CUI in accordance with approved authorizations"
+    family: "Access Control"
+    evidence:
+      - events: ["ai.dlp.match", "ai.policy.violation"]
+        min_level: content_visible
+        strength: partial
+        narrative: >
+          {product} inspects AI-bound content for CUI markings, ITAR terminology, and
+          distribution statements and records every match. In the review period
+          {dlp_count} events contained flagged content across {dlp_systems} AI systems.
+      - events: ["ai.policy.violation"]
+        min_level: enforced
+        strength: full
+        narrative: >
+          In enforce mode the inline gateway masks or blocks CUI before it reaches an
+          external model; {blocked_count} flows were prevented in the review period.
+    also_800_53: ["AC-4"]
+    ai_rmf: ["MAP 1.1", "MANAGE 2.2"]
+
+  - id: "3.1.20"
+    name: "Verify and control/limit connections to and use of external systems"
+    family: "Access Control"
+    evidence:
+      - events: ["ai.app.discovered", "ai.prompt.submitted", "ai.signin"]
+        min_level: metadata_only
+        strength: partial
+        narrative: >
+          {product} maintains a continuously updated inventory of AI systems in use.
+          {system_count} AI systems have been identified: {governed_count} governed through
+          the gateway, {observed_count} observed via tenant and network logs, and
+          {declared_count} declared manually. {external_count} are externally hosted SaaS.
+          {unapproved_count} systems are in use without documented approval.
+    also_800_53: ["AC-20"]
+    ai_rmf: ["MAP 1.1", "GOVERN 1.6"]
+
+  - id: "3.1.22"
+    name: "Control CUI posted or processed on publicly accessible systems"
+    family: "Access Control"
+    evidence:
+      - events: ["ai.dlp.match"]
+        min_level: content_visible
+        strength: partial
+        narrative: >
+          Externally hosted AI services are treated as publicly accessible systems for
+          CUI purposes. {external_dlp_count} flagged-content events targeted external SaaS
+          AI systems in the review period.
+    also_800_53: ["AC-22"]
+    ai_rmf: ["MAP 4.1"]
+
+  - id: "3.3.1"
+    name: "Create and retain system audit logs and records"
+    family: "Audit and Accountability"
+    evidence:
+      - events: ["*"]
+        min_level: metadata_only
+        strength: full
+        narrative: >
+          {product} retains {total_events} audit records covering AI usage from
+          {first_event} to {last_event}. Each record identifies the actor, the AI system,
+          the event type, and the collection source, in a versioned schema
+          ({schema_version}).
+    also_800_53: ["AU-2", "AU-3", "AU-12"]
+    ai_rmf: ["MEASURE 2.7"]
+
+  - id: "3.3.2"
+    name: "Ensure actions of individual users can be uniquely traced"
+    family: "Audit and Accountability"
+    evidence:
+      - events: ["*"]
+        min_level: metadata_only
+        strength: partial
+        narrative: >
+          {attributed_pct}% of AI audit records are attributed to an identified human or
+          agent principal. Agent actions carry the sponsoring human identity where the
+          source exposes it.
+    also_800_53: ["AU-3", "IA-2"]
+    ai_rmf: ["GOVERN 2.1"]
+
+  - id: "3.3.5"
+    name: "Correlate audit record review, analysis, and reporting processes"
+    family: "Audit and Accountability"
+    evidence:
+      - events: ["*"]
+        min_level: metadata_only
+        strength: partial
+        narrative: >
+          AI audit records from {source_count} sources are normalized into a single
+          schema and can be forwarded to the organization's SIEM for correlation with
+          identity, endpoint, and network telemetry.
+    also_800_53: ["AU-6(3)"]
+    ai_rmf: ["MEASURE 2.7"]
+
+  - id: "3.3.8"
+    name: "Protect audit information and audit logging tools from unauthorized access, modification, and deletion"
+    family: "Audit and Accountability"
+    evidence:
+      - events: ["*"]
+        min_level: metadata_only
+        strength: partial
+        narrative: >
+          Audit records are append-only and hash-chained; each record carries the SHA-256
+          of its predecessor. Chain verification at report time: {chain_status}.
+    also_800_53: ["AU-9"]
+    ai_rmf: ["GOVERN 1.4"]
+
+  - id: "3.4.1"
+    name: "Establish and maintain baseline configurations and inventories of organizational systems"
+    family: "Configuration Management"
+    evidence:
+      - events: ["ai.app.discovered"]
+        min_level: metadata_only
+        strength: partial
+        narrative: >
+          The AI system inventory is a component of the organizational system inventory.
+          {system_count} AI systems are tracked with hosting model, approval status, and
+          CUI scoping determination.
+    also_800_53: ["CM-8"]
+    ai_rmf: ["MAP 1.1"]
+
+  - id: "3.4.9"
+    name: "Control and monitor user-installed software"
+    family: "Configuration Management"
+    evidence:
+      - events: ["ai.app.discovered"]
+        min_level: metadata_only
+        strength: observe
+        narrative: >
+          {unapproved_count} AI systems were observed in use without recorded approval
+          (shadow AI). These are listed in Appendix A for disposition.
+    also_800_53: ["CM-11"]
+    ai_rmf: ["GOVERN 1.6"]
+
+  - id: "3.13.1"
+    name: "Monitor, control, and protect communications at external boundaries"
+    family: "System and Communications Protection"
+    evidence:
+      - events: ["ai.prompt.submitted", "ai.file.uploaded"]
+        min_level: metadata_only
+        strength: observe
+        narrative: >
+          AI traffic crossing the system boundary to external providers is monitored.
+          {external_event_count} events targeted externally hosted AI systems.
+      - events: ["ai.prompt.submitted"]
+        min_level: enforced
+        strength: full
+        narrative: >
+          In enforce mode the gateway is the single egress point for AI traffic from
+          governed applications and applies policy before any content leaves the boundary.
+    also_800_53: ["SC-7"]
+    ai_rmf: ["MANAGE 2.2"]
+
+  - id: "3.14.6"
+    name: "Monitor organizational systems to detect attacks and indicators of potential attacks"
+    family: "System and Information Integrity"
+    evidence:
+      - events: ["ai.tool.called", "ai.tool.blocked", "ai.policy.violation"]
+        min_level: content_visible
+        strength: partial
+        narrative: >
+          Agent tool invocations and policy violations are recorded and available to the
+          SOC for detection of prompt injection, tool runaway, and unauthorized model use.
+    also_800_53: ["SI-4"]
+    ai_rmf: ["MEASURE 2.7", "MANAGE 4.1"]

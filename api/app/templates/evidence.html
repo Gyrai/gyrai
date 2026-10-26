@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block body %}
+<h1>Evidence — NIST SP 800-171 Rev 2</h1>
+<p><a class="btn" href="/evidence/report.md">Download Markdown</a><a class="btn" href="/evidence/report.json">Download JSON</a></p>
+<div class="tiles">
+<div class="tile"><div class="n">{{ report.summary.total_events }}</div><div class="l">records, {{ report.summary.first_event }} → {{ report.summary.last_event }}</div></div>
+<div class="tile"><div class="n">{{ report.controls|selectattr('status','equalto','evidence_available')|list|length }}/{{ report.controls|length }}</div><div class="l">controls with evidence</div></div>
+<div class="tile"><div class="n {% if 'BROKEN' in report.summary.chain_status %}bad{% else %}good{% endif %}" style="font-size:14px">{{ report.summary.chain_status }}</div><div class="l">audit chain integrity</div></div>
+</div>
+<h2>Control narratives</h2>
+{% for c in report.controls %}<div class="ctl"><h3>{{ c.id }} {{ c.name }}
+{% if c.status=='evidence_available' %}<span class="badge {{ c.strength }}">{{ c.strength }}</span> <span class="badge">{{ c.observation_level }}</span>{% else %}<span class="badge none">no evidence yet</span>{% endif %}</h3>
+<div class="muted" style="font-size:12px">{{ c.family }} · 800-53 {{ c.also_800_53|join(', ') }} · AI RMF {{ c.ai_rmf|join(', ') }}</div>
+{% if c.narrative %}<p>{{ c.narrative }}</p>{% else %}<p class="muted">Connect a source that produces the required events.</p>{% endif %}</div>{% endfor %}
+<h2>Appendix A — systems without recorded approval</h2>
+{% if report.appendix_a_shadow_ai %}<table><tr><th>System</th><th>Hosting</th><th>First seen</th><th>Events</th><th>Sources</th></tr>
+{% for s in report.appendix_a_shadow_ai %}<tr><td>{{ s.display_name }}</td><td>{{ s.hosting }}</td><td><code>{{ s.first_seen[:10] }}</code></td><td>{{ s.event_count }}</td><td>{{ s.sources|join(', ') }}</td></tr>{% endfor %}</table>
+{% else %}<p class="muted">None.</p>{% endif %}
+{% endblock %}

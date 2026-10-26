@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://consultant.works/schemas/aicp/audit-event/1.0.0",
+  "title": "AI Control Plane Audit Event",
+  "description": "One observed or enforced AI interaction. Written by collectors (monitor mode) today and by the inline gateway (enforce mode) later. Every consumer (UI, evidence engine, SIEM forwarder) reads only this shape.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "event_id",
+    "timestamp",
+    "source",
+    "observation_level",
+    "event_type",
+    "actor",
+    "target"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Assigned by the producer. Must be stable so re-collection is idempotent."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 with explicit UTC offset (AU-8)."
+    },
+    "received_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Set by the API on ingest."
+    },
+    "source": {
+      "type": "string",
+      "description": "Which producer wrote this event.",
+      "enum": [
+        "gateway",
+        "collector.m365",
+        "collector.azure_openai",
+        "collector.bedrock",
+        "collector.web_gateway",
+        "collector.openai_enterprise",
+        "collector.anthropic_enterprise",
+        "collector.file",
+        "manual"
+      ]
+    },
+    "observation_level": {
+      "type": "string",
+      "description": "How much this source can see or do. Drives evidence strength in reports.",
+      "enum": [
+        "metadata_only",
+        "content_visible",
+        "enforced"
+      ]
+    },
+    "event_type": {
+      "type": "string",
+      "description": "Dot-namespaced verb. Stable vocabulary; add, never rename.",
+      "enum": [
+        "ai.prompt.submitted",
+        "ai.response.delivered",
+        "ai.tool.called",
+        "ai.tool.blocked",
+        "ai.tool.approved",
+        "ai.file.uploaded",
+        "ai.embedding.created",
+        "ai.session.started",
+        "ai.policy.violation",
+        "ai.dlp.match",
+        "ai.app.discovered",
+        "ai.signin",
+        "ai.admin.change"
+      ]
+    },
+    "actor": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "enum": ["human", "agent", "service", "unknown"] },
+        "id": { "type": "string", "description": "UPN, object ID, SPIFFE ID, or API key fingerprint." },
+        "display_name": { "type": "string" },
+        "on_behalf_of": { "type": "string", "description": "Human sponsor when actor.type is agent (RFC 8693 chain)." },
+        "ip": { "type": "string" },
+        "device_id": { "type": "string" }
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": ["ai_system"],
+      "properties": {
+        "ai_system": {
+          "type": "string",
+          "description": "Canonical inventory key, e.g. 'm365.copilot', 'openai.chatgpt', 'azure_openai.<resource>', 'bedrock.<model>', 'internal.<app>'."
+        },
+        "model_id": { "type": "string" },
+        "model_checkpoint_sha256": { "type": "string" },
+        "endpoint": { "type": "string", "format": "uri" },
+        "tool_name": { "type": "string" },
+        "tool_server": { "type": "string", "description": "MCP server or integration name." },
+        "hosting": { "type": "string", "enum": ["external_saas", "cloud_tenant", "on_prem", "unknown"] }
+      }
+    },
+    "content": {
+      "type": "object",
+      "description": "Never store raw prompt text here by default. Hashes and classifier output only.",
+      "properties": {
+        "prompt_sha256": { "type": "string" },
+        "response_sha256": { "type": "string" },
+        "prompt_tokens": { "type": "integer", "minimum": 0 },
+        "response_tokens": { "type": "integer", "minimum": 0 },
+        "attachments": { "type": "integer", "minimum": 0 },
+        "dlp_findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["category", "detector", "count"],
+            "properties": {
+              "category": {
+                "type": "string",
+                "enum": ["CUI_MARKING", "ITAR_TERM", "CAGE_CODE", "PII", "SECRET", "DISTRIBUTION_STATEMENT", "CUSTOM"]
+              },
+              "detector": { "type": "string" },
+              "count": { "type": "integer", "minimum": 1 },
+              "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+            }
+          }
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "description": "Null for metadata-only sources. Advisory in monitor mode, binding in enforce mode.",
+      "properties": {
+        "mode": { "type": "string", "enum": ["monitor", "enforce"] },
+        "action": { "type": "string", "enum": ["allow", "mask", "block", "require_approval", "route_local"] },
+        "policy_id": { "type": "string" },
+        "policy_version": { "type": "string", "description": "Git SHA or bundle hash of the policy in force (CM-3)." },
+        "reason": { "type": "string" }
+      }
+    },
+    "compliance": {
+      "type": "object",
+      "description": "Controls this event is evidence for. Populated by the evidence engine, not the producer.",
+      "properties": {
+        "nist_800_171": { "type": "array", "items": { "type": "string" } },
+        "nist_800_53": { "type": "array", "items": { "type": "string" } },
+        "nist_ai_rmf": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "raw_ref": {
+      "type": "string",
+      "description": "Pointer to the original upstream record (Graph activity ID, CloudTrail event ID) for chain of custody."
+    },
+    "integrity": {
+      "type": "object",
+      "description": "Reserved for hash-chaining (AU-9/AU-10). Populated by the API when chaining is enabled.",
+      "properties": {
+        "prev_hash": { "type": "string" },
+        "hash": { "type": "string" }
+      }
+    }
+  },
+  "additionalProperties": false
+}

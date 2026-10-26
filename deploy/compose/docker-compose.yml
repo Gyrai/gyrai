@@ -1,0 +1,117 @@
+# Single-box deployment for small customers and for local development.
+#   cp .env.example .env   (edit)
+#   docker compose up -d
+#   open http://localhost:8000
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: aicp
+      POSTGRES_USER: aicp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aicp-dev-password}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aicp"]
+      interval: 5s
+      retries: 10
+
+  opa:
+    image: openpolicyagent/opa:0.69.0
+    command: ["run", "--server", "--addr", ":8181", "/policies"]
+    volumes:
+      - ../../policies:/policies:ro
+
+  api:
+    build:
+      context: ../..
+      dockerfile: api/Dockerfile
+    environment:
+      AICP_DATABASE_URL: postgresql+psycopg://aicp:${POSTGRES_PASSWORD:-aicp-dev-password}@db:5432/aicp
+      AICP_INGEST_TOKEN: ${AICP_INGEST_TOKEN:-dev-ingest-token-change-me}
+      AICP_OPA_URL: http://opa:8181
+      AICP_OPA_ENABLED: "true"
+      AICP_ORG_NAME: ${AICP_ORG_NAME:-Consultant Works}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 3s
+      retries: 20
+    depends_on:
+      db:
+        condition: service_healthy
+      opa:
+        condition: service_started
+
+  # Loads demo data once. Remove in customer deployments.
+  seed:
+    build:
+      context: ../..
+      dockerfile: collectors/Dockerfile
+    command: ["file", "--path", "/samples/sample-events.jsonl", "--api", "http://api:8000"]
+    environment:
+      AICP_INGEST_TOKEN: ${AICP_INGEST_TOKEN:-dev-ingest-token-change-me}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: "no"
+    profiles: ["demo"]
+
+  # Microsoft 365 collector, polling every 5 minutes.
+  collector-m365:
+    build:
+      context: ../..
+      dockerfile: collectors/Dockerfile
+    command: ["m365", "--api", "http://api:8000", "--loop", "300"]
+    environment:
+      AICP_INGEST_TOKEN: ${AICP_INGEST_TOKEN:-dev-ingest-token-change-me}
+      AICP_M365_TENANT_ID: ${AICP_M365_TENANT_ID}
+      AICP_M365_CLIENT_ID: ${AICP_M365_CLIENT_ID}
+      AICP_M365_CLIENT_SECRET: ${AICP_M365_CLIENT_SECRET}
+    volumes:
+      - collector-state:/state
+    depends_on:
+      - api
+    restart: unless-stopped
+    profiles: ["m365"]
+
+  # ---- Inline gateway (monitor mode by default). Point apps at http://<host>:8080/v1 ----
+  gateway:
+    build:
+      context: ../..
+      dockerfile: gateway/Dockerfile
+    environment:
+      AICP_GW_MODE: ${AICP_GW_MODE:-monitor}
+      AICP_GW_UPSTREAM_URL: ${AICP_GW_UPSTREAM_URL:-http://mock-model:9999}
+      AICP_GW_UPSTREAM_KEY: ${AICP_GW_UPSTREAM_KEY:-}
+      AICP_GW_UPSTREAM_SYSTEM_KEY: ${AICP_GW_UPSTREAM_SYSTEM_KEY:-gateway.openai}
+      AICP_GW_UPSTREAM_HOSTING: ${AICP_GW_UPSTREAM_HOSTING:-external_saas}
+      AICP_GW_LOCAL_UPSTREAM_URL: ${AICP_GW_LOCAL_UPSTREAM_URL:-}
+      AICP_GW_API_URL: http://api:8000
+      AICP_GW_INGEST_TOKEN: ${AICP_INGEST_TOKEN:-dev-ingest-token-change-me}
+      AICP_GW_OPA_URL: http://opa:8181
+      AICP_GW_KEYS_FILE: /gw/gateway_keys.json
+      AICP_GW_FALLBACK_LOG: /state/gateway_audit_fallback.jsonl
+    volumes:
+      - ../../gateway/gateway_keys.json:/gw/gateway_keys.json:ro
+      - gateway-state:/state
+    ports:
+      - "8080:8080"
+    depends_on:
+      - api
+      - opa
+    restart: unless-stopped
+
+  # Fake model for demos and tests. Remove in customer deployments.
+  mock-model:
+    build:
+      context: ../..
+      dockerfile: gateway/Dockerfile
+    command: ["uvicorn", "mock_upstream:app", "--host", "0.0.0.0", "--port", "9999"]
+    profiles: ["demo"]
+
+volumes:
+  pgdata:
+  collector-state:
+  gateway-state:

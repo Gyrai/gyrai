@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+*.db
+*.db-*
+.env
+.aicp/
+.pytest_cache/
+.ruff_cache/
+gateway/gateway_keys.json
+*_fallback.jsonl
+
+# demo helpers state
+aicp.db*

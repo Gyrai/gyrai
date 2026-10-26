@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% block body %}
+<h1>AI system inventory</h1>
+<p class="muted">Governed = traffic passes through the gateway. Observed = seen in tenant or network logs. Declared = registered manually, not yet observed. Edit approval and CUI scoping via <code>PATCH /api/v1/systems/{key}</code>.</p>
+<table><tr><th>System</th><th>State</th><th>Hosting</th><th>Approved</th><th>CUI in scope</th><th>Events</th><th>First seen</th><th>Last seen</th><th>Sources</th></tr>
+{% for s in systems %}<tr><td><a href="/events?ai_system={{ s.key }}">{{ s.display_name }}</a><br><code class="muted">{{ s.key }}</code></td>
+<td><span class="badge {{ s.governance_state }}">{{ s.governance_state }}</span></td><td>{{ s.hosting }}</td>
+<td>{% if s.approved %}<span class="good">yes</span>{% elif s.approved is none %}<span class="warn">unknown</span>{% else %}<span class="bad">no</span>{% endif %}</td>
+<td>{% if s.cui_in_scope %}<span class="warn">yes</span>{% elif s.cui_in_scope is none %}<span class="muted">unset</span>{% else %}no{% endif %}</td>
+<td>{{ s.event_count }}</td><td><code>{{ s.first_seen.strftime('%Y-%m-%d') }}</code></td><td><code>{{ s.last_seen.strftime('%Y-%m-%d') }}</code></td>
+<td>{% for src in s.sources %}<span class="badge">{{ src }}</span> {% endfor %}</td></tr>{% endfor %}</table>
+{% endblock %}

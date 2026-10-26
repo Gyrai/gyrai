@@ -1,0 +1,5 @@
+<!doctype html><html><head><meta charset="utf-8"><title>{{ product }}</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/static/console.css"></head>
+<body><header><div class="brand">{{ product }}<span>{{ org }}</span></div>
+<nav><a href="/" {% if request.url.path=='/' %}class="active"{% endif %}>Dashboard</a><a href="/inventory" {% if request.url.path=='/inventory' %}class="active"{% endif %}>Inventory</a><a href="/events" {% if request.url.path=='/events' %}class="active"{% endif %}>Events</a><a href="/evidence" {% if request.url.path.startswith('/evidence') %}class="active"{% endif %}>Evidence</a><a href="/docs">API</a></nav></header>
+<main>{% block body %}{% endblock %}</main></body></html>
