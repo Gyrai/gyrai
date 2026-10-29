@@ -1,3 +1,6 @@
+"""API tests: ingest, validation, the hash chain, authentication, inventory editing and
+the evidence report. They run the real FastAPI app in-process against a throwaway SQLite
+file that is rebuilt before every test."""
 import os
 import uuid
 from datetime import datetime, timezone

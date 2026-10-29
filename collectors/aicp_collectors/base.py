@@ -24,6 +24,8 @@ from pathlib import Path
 import httpx
 
 log = logging.getLogger("aicp.collector")
+# Fixed namespace for stable_event_id(). Never change it: doing so would give every
+# already-collected record a new id and cause duplicates on the next run.
 NAMESPACE = uuid.UUID("6c2a0f6e-7f3a-4e1c-9a1e-a1c900000001")
 
 
@@ -33,10 +35,18 @@ def stable_event_id(source: str, raw_ref: str) -> str:
 
 
 def sha256(text: str) -> str:
+    """Hex SHA-256 of the text. Collectors store hashes of prompts and responses, never the text."""
     return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
 
 
 class Collector(ABC):
+    """Base class for log collectors.
+
+    Subclasses set `source` and `observation_level` and implement fetch() and normalize().
+    run_once() does the rest: read the high-water mark, fetch new records, convert them to
+    schema events, post them in batches and save the new mark.
+    """
+
     source: str = "collector.file"
     observation_level: str = "metadata_only"
 
@@ -50,22 +60,31 @@ class Collector(ABC):
 
     # ---- state (high-water mark) ----
     def load_since(self, default_hours: int = 24) -> datetime:
+        """When the last run stopped. First run looks back `default_hours` (24 by default)."""
         if self.state_file.exists():
             return datetime.fromisoformat(json.loads(self.state_file.read_text())["since"])
         return datetime.now(timezone.utc) - timedelta(hours=default_hours)
 
     def save_since(self, ts: datetime) -> None:
+        """Remember the newest event time seen, so the next run only fetches newer records."""
         self.state_file.write_text(json.dumps({"since": ts.isoformat()}))
 
     # ---- to implement ----
     @abstractmethod
-    def fetch(self, since: datetime) -> Iterable[dict]: ...
+    def fetch(self, since: datetime) -> Iterable[dict]:
+        """Yield raw upstream records newer than `since`."""
+
 
     @abstractmethod
-    def normalize(self, record: dict) -> dict | None: ...
+    def normalize(self, record: dict) -> dict | None:
+        """Convert one raw record to a schema event, or return None to skip it."""
+
 
     # ---- shared ----
     def base_event(self, event_type: str, ts: datetime, raw_ref: str) -> dict:
+        """Start a schema event with the required fields filled in. Subclasses then set the
+        real actor, target and content. `raw_ref` is the upstream record's own id; it makes the
+        event_id repeatable, so collecting the same record twice does not create a duplicate."""
         return {
             "schema_version": "1.0.0",
             "event_id": stable_event_id(self.source, raw_ref),
@@ -79,6 +98,8 @@ class Collector(ABC):
         }
 
     def post(self, events: list[dict]) -> dict:
+        """Send events to the API, retrying up to 10 times three seconds apart (the API may still be
+        starting). With dry_run, print them instead. Returns the API's accepted/rejected summary."""
         if not events:
             return {"accepted": 0, "rejected": []}
         if self.dry_run:
@@ -103,6 +124,8 @@ class Collector(ABC):
         raise RuntimeError(f"governance plane unreachable after retries: {last_err}")
 
     def run_once(self, batch_size: int = 200) -> dict:
+        """Collect once: fetch, normalize, post in batches, then advance the high-water mark.
+        The mark moves only after posting succeeds, so a failed run is retried from the same point."""
         since = self.load_since()
         newest = since
         batch, totals = [], {"accepted": 0, "rejected": 0}

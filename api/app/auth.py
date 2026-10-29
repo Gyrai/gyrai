@@ -32,10 +32,12 @@ _serializer = URLSafeTimedSerializer(_secret, salt="aicp-console")
 # ---------- passwords ----------
 
 def hash_password(pw: str) -> str:
+    """bcrypt hash with 12 rounds. The salt is generated per password and stored in the hash."""
     return bcrypt.hashpw(pw.encode(), bcrypt.gensalt(rounds=12)).decode()
 
 
 def verify_password(pw: str, pw_hash: str) -> bool:
+    """True if `pw` matches the stored hash. A malformed hash counts as a mismatch, not an error."""
     try:
         return bcrypt.checkpw(pw.encode(), pw_hash.encode())
     except ValueError:
@@ -45,10 +47,12 @@ def verify_password(pw: str, pw_hash: str) -> bool:
 # ---------- sessions ----------
 
 def make_session(username: str) -> str:
+    """Create a signed, tamper-proof cookie value. The random `n` makes each token unique."""
     return _serializer.dumps({"u": username, "n": secrets.token_hex(8)})
 
 
 def read_session(token: str | None) -> str | None:
+    """Return the username in a valid, unexpired session cookie, or None."""
     if not token:
         return None
     try:
@@ -59,6 +63,7 @@ def read_session(token: str | None) -> str | None:
 
 
 def set_session_cookie(response, username: str) -> None:
+    """Attach the session cookie. HttpOnly keeps scripts from reading it; SameSite=Lax blunts CSRF."""
     response.set_cookie(
         COOKIE, make_session(username),
         max_age=settings.session_hours * 3600,
@@ -67,12 +72,14 @@ def set_session_cookie(response, username: str) -> None:
 
 
 def clear_session_cookie(response) -> None:
+    """Log out by deleting the session cookie."""
     response.delete_cookie(COOKIE, path="/")
 
 
 # ---------- dependencies ----------
 
 def current_user(request: Request, db: Session = Depends(get_db)) -> User | None:
+    """The logged-in user, or None. Disabled accounts are treated as logged out even with a valid cookie."""
     username = read_session(request.cookies.get(COOKIE))
     if not username:
         return None
@@ -91,6 +98,7 @@ def require_user(request: Request, db: Session = Depends(get_db)) -> User:
 
 
 def require_admin(user: User = Depends(require_user)) -> User:
+    """For routes that change things: logged in AND role "admin" (viewers get 403)."""
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="admin role required")
     return user
@@ -134,6 +142,11 @@ def audit_auth_event(db: Session, action: str, username: str, ip: str | None, ok
 
 
 def attempt_login(db: Session, username: str, password: str, ip: str | None) -> User | None:
+    """Check credentials and return the user, or None on any failure.
+
+    Every outcome, good or bad, is written to the audit store. Failures return None without
+    saying which check failed, so the login page cannot be used to discover usernames.
+    """
     username = (username or "").strip().lower()
     user = db.get(User, username)
     if not user or user.disabled:
@@ -157,6 +170,8 @@ def attempt_login(db: Session, username: str, password: str, ip: str | None) -> 
 
 
 def change_password(db: Session, user: User, new_password: str, ip: str | None) -> None:
+    """Store a new password hash, clear the must-change flag and audit the change.
+    The caller must already have checked the password with password_ok()."""
     user.password_hash = hash_password(new_password)
     user.must_change_password = False
     db.commit()

@@ -1,3 +1,5 @@
+"""AI inventory API: list, declare and edit the AI systems an organization uses.
+The console's inventory pages reuse the helper functions here."""
 import uuid
 from datetime import datetime, timezone
 
@@ -13,6 +15,7 @@ router = APIRouter(prefix="/api/v1", tags=["inventory"])
 
 
 class SystemUpdate(BaseModel):
+    """Fields an admin may change. Leaving a field out of a PATCH leaves it unchanged."""
     display_name: str | None = None
     vendor: str | None = None
     hosting: str | None = None
@@ -23,11 +26,13 @@ class SystemUpdate(BaseModel):
 
 
 class SystemCreate(SystemUpdate):
+    """Fields needed to declare a new system: its unique key and a display name."""
     key: str
     display_name: str
 
 
 def _dump(s: AISystem) -> dict:
+    """Convert an inventory row to the JSON the API returns."""
     return {
         "key": s.key,
         "display_name": s.display_name,
@@ -64,6 +69,8 @@ def audit_inventory_change(db: Session, actor: str, key: str, changes: dict) -> 
 
 
 def apply_update(db: Session, s: AISystem, data: dict, actor: str) -> dict:
+    """Apply changes to a system, save them, and audit those that actually differ from the
+    current values. Returns the changed fields (empty if nothing changed)."""
     changes = {}
     for field, value in data.items():
         if getattr(s, field) != value:
@@ -76,6 +83,7 @@ def apply_update(db: Session, s: AISystem, data: dict, actor: str) -> dict:
 
 
 def create_declared(db: Session, data: dict, actor: str) -> AISystem:
+    """Add a system an organization knows about but no log shows (state "declared"), and audit it."""
     now = utcnow()
     s = AISystem(
         key=data["key"],
@@ -100,6 +108,7 @@ def create_declared(db: Session, data: dict, actor: str) -> AISystem:
 
 @router.get("/systems", dependencies=[Depends(require_user)])
 def list_systems(db: Session = Depends(get_db)):
+    """All inventory entries, busiest first."""
     rows = db.scalars(select(AISystem).order_by(AISystem.event_count.desc())).all()
     return [_dump(r) for r in rows]
 
@@ -114,6 +123,7 @@ def declare_system(body: SystemCreate, db: Session = Depends(get_db), user: User
 
 @router.patch("/systems/{key}")
 def update_system(key: str, body: SystemUpdate, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    """Edit an entry (approval, CUI scope, owner, notes ...). Only fields in the request change."""
     s = db.get(AISystem, key)
     if not s:
         raise HTTPException(404, "unknown system")

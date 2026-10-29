@@ -45,6 +45,10 @@ cui_like if has_finding("ITAR_TERM")
 is_tool_call if input.event_type == "ai.tool.called"
 
 # ---- Rules. Lower priority number wins. ----
+#
+# Each rule adds a candidate to the `match` set. Several can fire for one event; the
+# `winner` rule below picks the candidate with the smallest "p". To add a rule, copy one,
+# give it a new id and choose a "p" that puts it where you want in the order.
 
 match contains {
 	"p": 10, "id": "AICP-001", "action": "block",
@@ -101,6 +105,7 @@ match contains {
 	not input.target.tool_name in auto_approved_tools
 }
 
+# The most important matching rule (smallest p). Undefined when nothing matched.
 winner := m if {
 	some m in match
 	every other in match {
@@ -108,6 +113,8 @@ winner := m if {
 	}
 }
 
+# The answer callers read. The default applies when no rule matched; the rule after it
+# replaces it whenever there is a winner.
 default advisory := {
 	"mode": "monitor",
 	"action": "allow",

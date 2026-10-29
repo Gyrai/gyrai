@@ -15,6 +15,7 @@ from .m365 import M365Collector
 
 
 def main() -> None:
+    """Parse the command line, build the chosen collector and run it once or in a loop."""
     p = argparse.ArgumentParser(prog="aicp-collect")
     p.add_argument("collector", choices=["file", "m365"])
     p.add_argument("--api", default=os.environ.get("AICP_API_URL", "http://localhost:8000"))

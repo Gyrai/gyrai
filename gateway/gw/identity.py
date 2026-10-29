@@ -11,10 +11,13 @@ from fastapi import HTTPException, Request
 
 from .config import settings
 
+# Cache of the keys file, loaded lazily on first use. None means "not loaded yet".
 _keys: dict[str, dict] | None = None
 
 
 def _load() -> dict[str, dict]:
+    """Return the gateway-key table, reading the keys file once and caching it.
+    A missing file gives an empty table, so every caller is "unknown"."""
     global _keys
     if _keys is None:
         p = Path(settings.keys_file)
@@ -23,11 +26,18 @@ def _load() -> dict[str, dict]:
 
 
 def reload_keys() -> None:
+    """Drop the cache so the next request re-reads the keys file (used by tests)."""
     global _keys
     _keys = None
 
 
 def identify(request: Request) -> dict:
+    """Work out who is calling and return an `actor` block for the audit event:
+    {"type": "human|agent|service|unknown", "id": ..., optional "on_behalf_of", "ip"}.
+
+    Monitor mode lets unknown keys through as actor "unknown" so nothing breaks while
+    an organization is still learning who calls what. Enforce mode rejects them with 401.
+    """
     auth = request.headers.get("authorization", "")
     key = auth.removeprefix("Bearer ").strip() if auth.lower().startswith("bearer ") else ""
     rec = _load().get(key)

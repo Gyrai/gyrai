@@ -3,6 +3,11 @@ from pydantic_settings import BaseSettings
 
 
 class GatewaySettings(BaseSettings):
+    """Every tunable for the gateway, read from AICP_GW_* environment variables or a
+    local .env file. Field names map to variables, e.g. `upstream_url` is
+    AICP_GW_UPSTREAM_URL. A single module-level instance, `settings`, is shared by
+    the rest of the package."""
+
     # monitor: record policy decisions, never alter traffic.
     # enforce: block / mask / require_approval per policy.
     mode: str = "monitor"
@@ -39,4 +44,5 @@ class GatewaySettings(BaseSettings):
     model_config = {"env_prefix": "AICP_GW_", "env_file": ".env", "extra": "ignore"}
 
 
+# Shared instance. Tests change fields on it directly (e.g. settings.mode = "enforce").
 settings = GatewaySettings()

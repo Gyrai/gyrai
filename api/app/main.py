@@ -1,3 +1,11 @@
+"""Gyrai API and console: the FastAPI application.
+
+This module only wires things together. The work happens in the routers:
+  events     - receives audit events (/api/v1/events) and lets you query them
+  inventory  - the AI inventory
+  console    - the HTML pages operators use
+  auth_pages - login, logout and password change
+"""
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -13,6 +21,7 @@ from .routers import auth_pages, console, events, inventory
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    """Startup work: create tables, then make sure at least one admin account exists."""
     init_db()
     bootstrap_admin()
     yield
@@ -33,9 +42,11 @@ app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent /
 
 @app.exception_handler(LoginRedirect)
 async def _login_redirect(request: Request, exc: LoginRedirect):
+    """Send visitors to the login page, remembering which page they wanted."""
     return RedirectResponse(f"/login?next={exc.next_path}", status_code=302)
 
 
 @app.get("/healthz", include_in_schema=False)
 def healthz():
+    """Liveness probe for docker and load balancers. Needs no login."""
     return {"ok": True}

@@ -1,4 +1,5 @@
-"""Forwarder tests against the real API (in-process) and a mock Splunk HEC + a real local syslog socket."""
+"""Forwarder tests against the real API (in-process) and a mock Splunk HEC + a real local syslog socket.
+They cover checkpointing, retry after an output failure, and the output formats."""
 import json
 import os
 import socket

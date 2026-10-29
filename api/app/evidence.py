@@ -21,6 +21,8 @@ LEVEL_RANK = {"metadata_only": 0, "content_visible": 1, "enforced": 2}
 
 
 def load_mapping(name: str = "nist-800-171r2") -> dict:
+    """Load a control mapping from evidence/mappings/<name>.yaml. To support another
+    framework, add a file there that follows the same structure."""
     return yaml.safe_load((MAPPINGS_DIR / f"{name}.yaml").read_text())
 
 
@@ -73,6 +75,8 @@ def _facts(db: Session) -> dict:
 
 
 def _max_level_for(db: Session, event_types: list[str]) -> str | None:
+    """The strongest observation level seen among events of these types, or None if there are
+    none. "*" matches every event type."""
     q = select(AuditEvent.observation_level).distinct()
     if "*" not in event_types:
         q = q.where(AuditEvent.event_type.in_(event_types))
@@ -83,6 +87,13 @@ def _max_level_for(db: Session, event_types: list[str]) -> str | None:
 
 
 def build_report(db: Session, framework: str = "nist-800-171r2") -> dict:
+    """Build the evidence report as a dict (the JSON API and the Markdown export both use it).
+
+    For each control in the mapping, pick the strongest evidence rule whose minimum observation
+    level is met by data actually in the store, and fill its narrative template with real
+    numbers from _facts(). A control with no qualifying data is reported as "no_evidence_yet"
+    rather than given a weaker-sounding narrative.
+    """
     mapping = load_mapping(framework)
     facts = _facts(db)
     controls_out = []
@@ -126,6 +137,7 @@ def build_report(db: Session, framework: str = "nist-800-171r2") -> dict:
 
 
 def report_markdown(report: dict) -> str:
+    """Render a report from build_report() as a Markdown document an assessor can read."""
     s = report["summary"]
     lines = [
         f"# AI Governance Evidence Report — {report['organization']}",

@@ -28,6 +28,8 @@ E = os.environ.get
 
 
 def build_outputs() -> list[Output]:
+    """Create the output adapters named in AICP_FWD_OUTPUTS (comma-separated, default "file"),
+    configuring each from its own AICP_FWD_* variables. An unknown name stops the program with exit code 2."""
     outs = []
     for name in [n.strip() for n in E("AICP_FWD_OUTPUTS", "file").split(",") if n.strip()]:
         if name == "file":
@@ -49,21 +51,30 @@ def build_outputs() -> list[Output]:
 
 
 class Forwarder:
+    """Copies new audit events from the API to every configured SIEM output.
+
+    Progress is tracked by `after_seq`, the sequence number of the last event all outputs accepted.
+    It is saved to a checkpoint file so a restart resumes where it stopped.
+    """
+
     def __init__(self, api_url: str, token: str, outputs: list[Output], checkpoint: Path, batch: int = 500):
         self.api_url, self.token, self.outputs, self.checkpoint, self.batch = api_url.rstrip("/"), token, outputs, checkpoint, batch
         self.after_seq = self._load()
 
     def _load(self) -> int:
+        """Read the saved checkpoint. A missing or unreadable file means start from the beginning (0)."""
         try:
             return int(json.loads(self.checkpoint.read_text())["after_seq"])
         except (OSError, ValueError, KeyError):
             return 0
 
     def _save(self):
+        """Write the checkpoint to disk."""
         self.checkpoint.parent.mkdir(parents=True, exist_ok=True)
         self.checkpoint.write_text(json.dumps({"after_seq": self.after_seq}))
 
     def fetch(self) -> tuple[list[dict], int]:
+        """Ask the API for the next batch after the checkpoint. Returns (events, sequence to resume from)."""
         r = httpx.get(f"{self.api_url}/api/v1/events/stream", params={"after_seq": self.after_seq, "limit": self.batch},
                       headers={"Authorization": f"Bearer {self.token}"}, timeout=30.0)
         r.raise_for_status()
@@ -96,6 +107,7 @@ class Forwarder:
 
 
 def main():
+    """Entry point: build the forwarder from the environment and poll forever (or once if POLL_SECONDS is 0)."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     fwd = Forwarder(E("AICP_FWD_API_URL", "http://localhost:8000"), E("AICP_FWD_INGEST_TOKEN", "dev-ingest-token-change-me"),
                     build_outputs(), Path(E("AICP_FWD_CHECKPOINT_FILE", "./forwarder.checkpoint.json")),

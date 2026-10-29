@@ -30,6 +30,7 @@ app = FastAPI(title="Gyrai Gateway", version="0.1.0")
 # ---------- helpers ----------
 
 def _sha(s: str) -> str:
+    """SHA-256 of the text. Audit events carry hashes, never the prompt or response itself."""
     return hashlib.sha256(s.encode("utf-8", "replace")).hexdigest()
 
 
@@ -51,6 +52,7 @@ def _text_of_messages(messages: list[dict]) -> str:
 
 
 def _count_attachments(messages: list[dict]) -> int:
+    """Count non-text message parts (images, files) so the audit event can note them."""
     n = 0
     for m in messages or []:
         if isinstance(m.get("content"), list):
@@ -59,6 +61,8 @@ def _count_attachments(messages: list[dict]) -> int:
 
 
 def _apply_to_messages(messages: list[dict], fn) -> list[dict]:
+    """Return a copy of the messages with `fn` applied to every text part (used for masking).
+    The caller's original list is not modified."""
     out = []
     for m in messages:
         m = dict(m)
@@ -72,6 +76,8 @@ def _apply_to_messages(messages: list[dict], fn) -> list[dict]:
 
 
 def _target(payload: dict, local: bool = False) -> dict:
+    """Describe the model being called for the audit event: system, model id, hosting and endpoint.
+    `local=True` describes the on-prem model used by the route_local action."""
     return {
         "ai_system": "gateway.local" if local else settings.upstream_system_key,
         "model_id": payload.get("model", ""),
@@ -81,6 +87,12 @@ def _target(payload: dict, local: bool = False) -> dict:
 
 
 async def _forward(path: str, payload: dict, stream: bool, local: bool = False) -> httpx.Response:
+    """Send the request to the upstream model and return its response.
+
+    The gateway's own provider key is attached here, so client apps never hold one.
+    The HTTP client must outlive this function when streaming, so it is stored on the
+    response as `_aicp_client` and the caller closes it once the body has been read.
+    """
     base = settings.local_upstream_url if local else settings.upstream_url
     key = settings.local_upstream_key if local else settings.upstream_key
     headers = {"Content-Type": "application/json"}
@@ -102,11 +114,13 @@ async def _forward(path: str, payload: dict, stream: bool, local: bool = False) 
 
 @app.get("/healthz")
 def healthz():
+    """Liveness probe. Also reports the mode so operators can see monitor vs enforce at a glance."""
     return {"ok": True, "mode": settings.mode}
 
 
 @app.get("/v1/models")
 async def models(request: Request):
+    """Pass the model list through from the upstream. The caller is still identified."""
     identify(request)
     r = await _forward("/v1/models", {}, stream=False)
     body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"data": []}
@@ -116,6 +130,8 @@ async def models(request: Request):
 
 @app.post("/v1/embeddings")
 async def embeddings(request: Request):
+    """Embeddings follow the same stages as chat (identify, scan, decide, forward, audit),
+    but there is no streaming and no response text to scan."""
     actor = identify(request)
     payload = await request.json()
     inp = payload.get("input", "")
@@ -147,6 +163,8 @@ async def embeddings(request: Request):
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
+    """The main route. Stages: identify the caller, scan the prompt, ask policy, then
+    block, mask, reroute or allow, forward upstream, and audit both prompt and response."""
     actor = identify(request)
     payload = await request.json()
     messages = payload.get("messages", [])
@@ -171,6 +189,8 @@ async def chat_completions(request: Request):
         sink().emit(ev)
         raise HTTPException(403, {"error": "blocked by policy", "policy_id": ev["decision"]["policy_id"], "reason": ev["decision"]["reason"]})
 
+    # Maps each placeholder inserted by masking back to the original value, so the
+    # model's reply can be restored before the user sees it. It never leaves this request.
     vault: dict[str, str] = {}
     if act == "mask":
         def _mask(s: str) -> str:
@@ -212,6 +232,8 @@ async def chat_completions(request: Request):
 
 
 def _emit_response(actor: dict, target: dict, out_text: str, usage: dict, vault: dict) -> None:
+    """Scan the model's reply and audit it. Uses the provider's token count when given,
+    otherwise estimates about four characters per token."""
     findings = scan(out_text)
     content = {"response_sha256": _sha(out_text),
                "response_tokens": usage.get("completion_tokens") or max(1, len(out_text) // 4)}

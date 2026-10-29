@@ -25,10 +25,13 @@ templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / 
 
 
 def _ctx(request: Request, **kw):
+    """Template variables every page needs (branding and the current user), plus page-specific ones."""
     return {"request": request, "product": settings.product_name, "org": settings.org_name, "user": None, **kw}
 
 
 def _safe_next(n: str | None) -> str:
+    """Only allow redirects to paths on this site. Rejecting "//host" and full URLs stops
+    an attacker from using the login page to bounce users to another website."""
     return n if n and n.startswith("/") and not n.startswith("//") else "/"
 
 
