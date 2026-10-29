@@ -1,4 +1,4 @@
-"""AI Governance Plane — inline gateway.
+"""Gyrai — inline gateway.
 
 OpenAI-compatible proxy. Apps set base_url to this service and keep working.
 
@@ -24,7 +24,7 @@ from .identity import identify
 from .policy import effective_action, evaluate
 
 log = logging.getLogger("aicp.gateway")
-app = FastAPI(title="AI Governance Plane Gateway", version="0.1.0")
+app = FastAPI(title="Gyrai Gateway", version="0.1.0")
 
 
 # ---------- helpers ----------

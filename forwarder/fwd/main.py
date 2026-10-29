@@ -1,4 +1,4 @@
-"""AI Governance Plane — SIEM forwarder.
+"""Gyrai — SIEM forwarder.
 
 Reads the audit store in sequence order through /api/v1/events/stream, keeps a
 checkpoint on disk, and ships each batch to every configured output. A batch is

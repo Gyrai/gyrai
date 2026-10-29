@@ -1,4 +1,4 @@
-# AI Governance Plane
+# Gyrai
 
 AI usage monitoring, inventory, and compliance evidence for organizations that handle regulated data (CUI, ITAR, PII). Built by Consultant Works.
 
@@ -127,8 +127,8 @@ Subclass `Collector` in `collectors/aicp_collectors/`, implement `fetch(since)` 
 ```bash
 git init -b main
 git add .
-git commit -m "AI Governance Plane v0.1: monitor mode"
-gh repo create consultantworks-ai/ai-governance-plane --private --source . --push
+git commit -m "Gyrai v0.1: monitor mode"
+gh repo create gyrai/gyrai --private --source . --push
 ```
 
 Then in the repo settings: protect `main` (require PR + passing CI), enable Dependabot and CodeQL.
