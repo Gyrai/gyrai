@@ -1,4 +1,4 @@
-# AI Control Plane — one-click demo start with Docker (Windows PowerShell)
+# AI Governance Plane — one-click demo start with Docker (Windows PowerShell)
 $host.UI.RawUI.WindowTitle = "AICP docker launcher"
 Set-Location -Path (Join-Path $PSScriptRoot "deploy\compose")
 
@@ -31,7 +31,7 @@ if (-not $engineOk) {
 
 if (-not (Test-Path ".env")) { Copy-Item ".env.example" ".env" }
 
-Write-Host "Building and starting AI Control Plane (first run downloads images; several minutes)..." -ForegroundColor Cyan
+Write-Host "Building and starting AI Governance Plane (first run downloads images; several minutes)..." -ForegroundColor Cyan
 & docker compose --profile demo up --build -d
 if ($LASTEXITCODE -ne 0) { Read-Host "docker compose failed (see above). Press Enter to exit"; exit 1 }
 

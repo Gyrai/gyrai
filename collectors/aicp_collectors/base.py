@@ -96,11 +96,11 @@ class Collector(ABC):
                 )
                 r.raise_for_status()
                 return r.json()
-            except httpx.HTTPError as e:  # control plane not up yet; wait and retry
+            except httpx.HTTPError as e:  # governance plane not up yet; wait and retry
                 last_err = e
                 log.warning("post failed (%s); retry %d/10", e, attempt + 1)
                 time.sleep(3)
-        raise RuntimeError(f"control plane unreachable after retries: {last_err}")
+        raise RuntimeError(f"governance plane unreachable after retries: {last_err}")
 
     def run_once(self, batch_size: int = 200) -> dict:
         since = self.load_since()

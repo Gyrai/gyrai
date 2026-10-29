@@ -1,4 +1,4 @@
-"""AI Control Plane — SIEM forwarder.
+"""AI Governance Plane — SIEM forwarder.
 
 Reads the audit store in sequence order through /api/v1/events/stream, keeps a
 checkpoint on disk, and ships each batch to every configured output. A batch is
@@ -77,7 +77,7 @@ class Forwarder:
             try:
                 events, nxt = self.fetch()
             except httpx.HTTPError as e:
-                log.warning("control plane unreachable: %s", e)
+                log.warning("governance plane unreachable: %s", e)
                 return shipped
             if not events:
                 return shipped

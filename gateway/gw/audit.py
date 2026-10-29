@@ -1,5 +1,5 @@
 """Audit emission. Non-blocking: events go on an in-memory queue and a background
-thread posts them to the control plane in batches. If the control plane is down
+thread posts them to the governance plane in batches. If the governance plane is down
 they spill to a local JSONL file (AU-5: never lose the record, never stall the
 request). The schema is the same one collectors use."""
 import json
@@ -69,10 +69,10 @@ class HttpSink(AuditSink):
             r.raise_for_status()
             rej = r.json().get("rejected", [])
             for x in rej:
-                log.warning("control plane rejected %s: %s", x.get("event_id"), x.get("error"))
+                log.warning("governance plane rejected %s: %s", x.get("event_id"), x.get("error"))
         except Exception as e:  # noqa: BLE001
-            log.warning("control plane unreachable (%s); spilling %d events", e, len(events))
-            self._spill(events, "CONTROL_PLANE_UNREACHABLE")
+            log.warning("governance plane unreachable (%s); spilling %d events", e, len(events))
+            self._spill(events, "GOVERNANCE_PLANE_UNREACHABLE")
 
     def _spill(self, events: list[dict], reason: str):
         with open(self.fallback, "a") as f:

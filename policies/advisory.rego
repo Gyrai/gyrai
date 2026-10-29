@@ -1,4 +1,4 @@
-# AI Control Plane — policy bundle
+# AI Governance Plane — policy bundle
 #
 # Evaluated on every ingested event. Today the result is ADVISORY: it is recorded
 # in the event's `decision` block with mode="monitor" and nothing is blocked.

@@ -33,7 +33,7 @@ class Settings(BaseSettings):
 
     # Branding for evidence reports.
     org_name: str = "Consultant Works"
-    product_name: str = "AI Control Plane"
+    product_name: str = "AI Governance Plane"
 
     model_config = {"env_prefix": "AICP_", "env_file": ".env", "extra": "ignore"}
 
