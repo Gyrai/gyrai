@@ -154,6 +154,7 @@ def attempt_login(db: Session, username: str, password: str, ip: str | None) -> 
         bcrypt.checkpw(b"x", bcrypt.gensalt(rounds=4))
         audit_auth_event(db, "login", username or "<empty>", ip, False, "unknown or disabled account")
         return None
+    # Too many consecutive failures lock the account (see the lockout_after setting; 0 turns this off).
     if settings.lockout_after and user.failed_logins >= settings.lockout_after:
         audit_auth_event(db, "login", username, ip, False, "account locked")
         return None

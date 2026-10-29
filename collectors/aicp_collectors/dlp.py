@@ -72,6 +72,7 @@ def redact(text: str, categories: set[str] | None = None) -> tuple[str, dict[str
     vault: dict[str, str] = {}
     out = text
     n = 0
+    # Each match gets a numbered placeholder. The counter n is shared across categories so no number repeats.
     for category in cats:
         for _name, rx in PATTERNS.get(category, []):
             def _sub(m, _c=category):

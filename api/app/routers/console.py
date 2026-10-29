@@ -57,6 +57,7 @@ def inventory(request: Request, db: Session = Depends(get_db)):
 @router.get("/events", response_class=HTMLResponse)
 def events_page(request: Request, db: Session = Depends(get_db), ai_system: str | None = None, dlp: int = 0):
     """Latest 200 audit events, newest first, optionally filtered by system or flagged content."""
+    # Build the query step by step: newest first, then add whichever filters were chosen.
     q = select(AuditEvent).order_by(AuditEvent.seq.desc())
     if ai_system:
         q = q.where(AuditEvent.ai_system == ai_system)

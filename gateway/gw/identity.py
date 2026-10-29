@@ -39,6 +39,7 @@ def identify(request: Request) -> dict:
     an organization is still learning who calls what. Enforce mode rejects them with 401.
     """
     auth = request.headers.get("authorization", "")
+    # Strip the "Bearer " prefix. Any other header form counts as no key at all.
     key = auth.removeprefix("Bearer ").strip() if auth.lower().startswith("bearer ") else ""
     rec = _load().get(key)
     if rec:

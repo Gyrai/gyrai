@@ -129,6 +129,7 @@ class Collector(ABC):
         since = self.load_since()
         newest = since
         batch, totals = [], {"accepted": 0, "rejected": 0}
+        # Stream records through in batches so memory stays flat even with a large backlog.
         for rec in self.fetch(since):
             ev = self.normalize(rec)
             if not ev:
@@ -148,6 +149,7 @@ class Collector(ABC):
         totals["rejected"] += len(res["rejected"])
         for rej in res["rejected"]:
             log.warning("rejected %s: %s", rej["event_id"], rej["error"])
+        # A dry run must not move the high-water mark.
         if not self.dry_run:
             self.save_since(newest)
         log.info("%s: accepted=%d rejected=%d since=%s", self.source, totals["accepted"], totals["rejected"], since.isoformat())

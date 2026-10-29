@@ -33,6 +33,7 @@ def _facts(db: Session) -> dict:
     first = db.scalar(select(func.min(AuditEvent.timestamp)))
     last = db.scalar(select(func.max(AuditEvent.timestamp)))
     dlp_rows = db.scalars(select(AuditEvent).where(AuditEvent.dlp_hit.is_(True))).all()
+    # "External" means hosted outside the organization, such as a public SaaS service.
     external_keys = {s.key for s in systems if s.hosting == "external_saas"}
     attributed = db.scalar(
         select(func.count(AuditEvent.seq)).where(AuditEvent.actor_id.is_not(None), AuditEvent.actor_id != "")
@@ -40,6 +41,7 @@ def _facts(db: Session) -> dict:
     external_events = db.scalar(
         select(func.count(AuditEvent.seq)).where(AuditEvent.ai_system.in_(external_keys))
     ) if external_keys else 0
+    # Counts events whose recorded decision was block or mask. In monitor mode those decisions were advisory: nothing was actually blocked.
     blocked = db.scalar(
         select(func.count(AuditEvent.seq)).where(AuditEvent.decision_action.in_(["block", "mask"]))
     ) or 0
@@ -103,7 +105,9 @@ def build_report(db: Session, framework: str = "nist-800-171r2") -> dict:
             have = _max_level_for(db, ev["events"])
             if have is None:
                 continue
+            # A rule applies only if we hold events at least as strong as it requires. Weaker data never earns the stronger narrative.
             if LEVEL_RANK[have] >= LEVEL_RANK[ev["min_level"]]:
+                # Collapse the YAML's line breaks, then fill the {placeholders} with real numbers from _facts().
                 cand = {
                     "strength": ev["strength"],
                     "observation_level": have,
@@ -120,6 +124,7 @@ def build_report(db: Session, framework: str = "nist-800-171r2") -> dict:
             "status": "evidence_available" if best else "no_evidence_yet",
             **(best or {}),
         })
+    # Appendix A: systems nobody has approved (the "shadow AI" list).
     shadow = [
         {"key": s.key, "display_name": s.display_name, "hosting": s.hosting,
          "first_seen": s.first_seen.isoformat(), "event_count": s.event_count, "sources": s.sources}

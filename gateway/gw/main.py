@@ -140,6 +140,7 @@ async def embeddings(request: Request):
     ev = new_event("ai.embedding.created", actor, _target(payload),
                    content={"prompt_sha256": _sha(text), "prompt_tokens": max(1, len(text) // 4),
                             **({"dlp_findings": findings} if findings else {})})
+    # Reclassify the event so scanner hits show up as DLP matches in the console.
     if findings:
         ev["event_type"] = "ai.dlp.match"
     ev["decision"] = evaluate(ev)
@@ -171,15 +172,19 @@ async def chat_completions(request: Request):
     stream = bool(payload.get("stream"))
 
     # ---- Stage 2: ingress ----
+    # Flatten every message into one string so a single scan covers system, user and tool-call text.
     text = _text_of_messages(messages)
     findings = scan(text)
+    # The audit event holds only a hash, a token estimate and the scan results. The prompt text is never stored.
     content = {"prompt_sha256": _sha(text), "prompt_tokens": max(1, len(text) // 4),
                "attachments": _count_attachments(messages)}
     if findings:
         content["dlp_findings"] = findings
     ev = new_event("ai.dlp.match" if findings else "ai.prompt.submitted", actor, _target(payload), content=content)
+    # Calls that offer tools to the model are marked, so tool use is visible in the inventory.
     if payload.get("tools"):
         ev["target"]["tool_server"] = "inline"
+    # Ask policy what it says, then work out what to do. Monitor mode always resolves to "allow".
     ev["decision"] = evaluate(ev)
     act = effective_action(ev["decision"])
 
@@ -210,6 +215,7 @@ async def chat_completions(request: Request):
     # ---- Stage 3/4: forward + egress ----
     r = await _forward("/v1/chat/completions", payload, stream=stream, local=local)
 
+    # Upstream errors go straight back to the caller; no response event is audited for them.
     if r.status_code >= 400 and not stream:
         body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"error": r.text}
         await r._aicp_client.aclose()
@@ -227,6 +233,7 @@ async def chat_completions(request: Request):
         _emit_response(actor, ev["target"], out_text, body.get("usage") or {}, vault)
         return JSONResponse(body, status_code=r.status_code)
 
+    # Streaming: chunks are relayed as they arrive, and the response event is audited when the stream ends.
     return StreamingResponse(_stream(r, actor, ev["target"], vault), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
@@ -256,6 +263,7 @@ async def _stream(r: httpx.Response, actor: dict, target: dict, vault: dict) -> 
             if not line:
                 yield b"\n"
                 continue
+            # Server-sent events: each "data:" line carries a JSON chunk holding the next piece of text.
             if line.startswith("data: ") and line != "data: [DONE]":
                 try:
                     chunk = json.loads(line[6:])

@@ -45,6 +45,7 @@ class SplunkHECOutput(Output):
     def send(self, events):
         lines = []
         for e in events:
+            # Use the event's own time so the Splunk timeline shows when things happened, not when they were forwarded.
             rec = {"time": datetime.fromisoformat(e["timestamp"]).timestamp(), "sourcetype": self.sourcetype,
                    "source": "aicp", "event": e}
             if self.index:

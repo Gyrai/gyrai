@@ -92,16 +92,20 @@ class Forwarder:
                 return shipped
             if not events:
                 return shipped
+            # `seq` is the API's internal cursor. SIEMs do not need it.
             for e in events:
                 e.pop("seq", None)
+            # Every output must accept the batch before the checkpoint moves. A failing SIEM causes a retry, never a gap.
             ok = all(o.send(events) for o in self.outputs)
             if not ok:
                 log.warning("an output rejected the batch; will retry (checkpoint stays at %d)", self.after_seq)
                 return shipped
+            # Only now is it safe to move the checkpoint forward.
             self.after_seq = nxt
             self._save()
             shipped += len(events)
             log.info("forwarded %d events (through seq %d) to %s", len(events), nxt, ",".join(o.name for o in self.outputs))
+            # A short batch means we have caught up with the API.
             if len(events) < self.batch:
                 return shipped
 

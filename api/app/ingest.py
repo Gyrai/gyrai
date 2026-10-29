@@ -70,9 +70,11 @@ def ingest_event(db: Session, event: dict) -> AuditEvent:
     if existing:
         return existing
 
+    # Work on a copy so the caller's dict is left unchanged. received_at is set by the server, not trusted from the sender.
     event = dict(event)
     event["received_at"] = utcnow().isoformat()
 
+    # A sender that already made a decision (the gateway) keeps it; otherwise ask OPA what it would have done.
     if "decision" not in event or event.get("decision") is None:
         adv = advisory_decision(event)
         if adv:
@@ -106,6 +108,7 @@ def ingest_event(db: Session, event: dict) -> AuditEvent:
         prev_hash=prev_hash,
         hash=this_hash,
     )
+# The row and the inventory update are saved in one commit, so they succeed or fail together.
     db.add(row)
     _upsert_system(db, event)
     db.commit()
@@ -151,10 +154,12 @@ def verify_chain(db: Session) -> dict:
     rows = db.scalars(select(AuditEvent).order_by(AuditEvent.seq)).all()
     prev = "0" * 64
     for r in rows:
+        # Events stored before hash chaining was switched on have no hash; skip them.
         if r.hash is None:
             continue
         body = dict(r.body)
         body.pop("integrity", None)
+        # Recompute what this hash should be from the previous hash plus the stored event (minus its integrity block).
         expect = hashlib.sha256(prev.encode() + _canonical(body)).hexdigest()
         if expect != r.hash or r.prev_hash != prev:
             return {"ok": False, "broken_at_seq": r.seq, "checked": len(rows)}

@@ -30,10 +30,13 @@ def evaluate(event: dict) -> dict:
 
     if settings.opa_enabled:
         try:
+            # Short timeout: a slow policy engine must not noticeably slow every request.
             r = httpx.post(f"{settings.opa_url}/v1/data/aicp/advisory", json={"input": event}, timeout=2.0)
             r.raise_for_status()
             res = r.json().get("result") or {}
+            # Copy only the fields we expect from OPA's answer, so unexpected extras never reach the audit event.
             decision.update({k: res[k] for k in ("action", "policy_id", "policy_version", "reason") if k in res})
+            # The mode always comes from gateway settings, never from the policy engine.
             decision["mode"] = mode
         except httpx.HTTPError as e:
             log.error("OPA unreachable: %s", e)

@@ -68,6 +68,7 @@ class HttpSink(AuditSink):
                 buf.append(self.q.get(timeout=0.2))
             except queue.Empty:
                 pass
+            # Send when the batch is full or has waited long enough, whichever comes first.
             if buf and (len(buf) >= self.batch or time.time() - last >= self.flush_s):
                 self._send(buf)
                 buf, last = [], time.time()

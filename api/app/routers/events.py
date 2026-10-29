@@ -44,6 +44,7 @@ def list_events(
     actor_id: str | None = None,
     dlp_only: bool = False,
 ):
+    # Build the query step by step: newest first, then add whichever filters were requested.
     q = select(AuditEvent).order_by(AuditEvent.seq.desc())
     if ai_system:
         q = q.where(AuditEvent.ai_system == ai_system)
