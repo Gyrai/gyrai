@@ -1,6 +1,6 @@
 # Gyrai
 
-AI usage monitoring, inventory, and compliance evidence for organizations that handle regulated data (CUI, ITAR, PII). Built by Consultant Works.
+AI usage monitoring, inventory and audit evidence for organizations that need to govern how AI is used, including those that handle regulated data. Pronounced "JY-rye". Built by Consultant Works and released under the Apache License 2.0.
 
 **Today (v0.1): monitor mode.** Collectors pull AI usage from systems the customer already has (Microsoft 365 / Copilot, log exports), normalize everything into one audit schema, score it against policy, and generate NIST SP 800-171 evidence.
 
@@ -150,3 +150,7 @@ Then in the repo settings: protect `main` (require PR + passing CI), enable Depe
 | 0.4 | MCP proxy for agent tool calls, human-in-the-loop approvals |
 | 0.5 | Presidio + local classifier DLP, streaming egress scanning |
 | 1.0 | Helm chart, Iron Bank hardening, air-gap mode, AI RMF + 800-53 evidence packs |
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). To report a security issue, see [SECURITY.md](SECURITY.md). To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
