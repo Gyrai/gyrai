@@ -3,6 +3,11 @@ from pydantic_settings import BaseSettings
 
 
 class GatewaySettings(BaseSettings):
+    """Every tunable for the gateway, read from AICP_GW_* environment variables or a
+    local .env file. Field names map to variables, e.g. `upstream_url` is
+    AICP_GW_UPSTREAM_URL. A single module-level instance, `settings`, is shared by
+    the rest of the package."""
+
     # monitor: record policy decisions, never alter traffic.
     # enforce: block / mask / require_approval per policy.
     mode: str = "monitor"
@@ -18,7 +23,7 @@ class GatewaySettings(BaseSettings):
     local_upstream_url: str = ""
     local_upstream_key: str = ""
 
-    # Where to find the control plane (audit store) and OPA.
+    # Where to find the governance plane (audit store) and OPA.
     api_url: str = "http://localhost:8000"
     ingest_token: str = "dev-ingest-token-change-me"
     opa_url: str = "http://localhost:8181"
@@ -29,7 +34,7 @@ class GatewaySettings(BaseSettings):
     keys_file: str = "gateway_keys.json"
     # In monitor mode, unknown keys pass through as actor.id="unknown". In enforce mode they are rejected.
 
-    # Fallback audit sink when the control plane is unreachable (fail-open on audit, never drop).
+    # Fallback audit sink when the governance plane is unreachable (fail-open on audit, never drop).
     fallback_log: str = "gateway_audit_fallback.jsonl"
 
     # Hosting classification of the primary upstream, used by policy.
@@ -39,4 +44,5 @@ class GatewaySettings(BaseSettings):
     model_config = {"env_prefix": "AICP_GW_", "env_file": ".env", "extra": "ignore"}
 
 
+# Shared instance. Tests change fields on it directly (e.g. settings.mode = "enforce").
 settings = GatewaySettings()

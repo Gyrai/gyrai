@@ -17,15 +17,17 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .db import AISystem, AuditEvent, utcnow
 
+# The one JSON Schema every event must satisfy, whichever collector or the gateway produced it.
 SCHEMA_PATH = Path(__file__).resolve().parents[2] / "schemas" / "audit-event.schema.json"
 _validator = Draft202012Validator(json.loads(SCHEMA_PATH.read_text()))
 
 
 class IngestError(ValueError):
-    pass
+    """The event is not valid against the audit-event schema. The message says which fields."""
 
 
 def validate(event: dict) -> None:
+    """Raise IngestError listing up to five schema problems, or return quietly if the event is valid."""
     errors = sorted(_validator.iter_errors(event), key=lambda e: e.path)
     if errors:
         msg = "; ".join(f"{'/'.join(str(p) for p in e.path) or '<root>'}: {e.message}" for e in errors[:5])
@@ -33,6 +35,8 @@ def validate(event: dict) -> None:
 
 
 def _canonical(event: dict) -> bytes:
+    """Serialize an event the same way every time (sorted keys, no spaces) so that
+    hashing it twice always gives the same answer."""
     return json.dumps(event, sort_keys=True, separators=(",", ":")).encode()
 
 
@@ -53,6 +57,12 @@ def advisory_decision(event: dict) -> dict | None:
 
 
 def ingest_event(db: Session, event: dict) -> AuditEvent:
+    """Validate and store one event, and return its database row.
+
+    Steps: reject invalid events; return the existing row if this event_id was already
+    stored; stamp `received_at`; fill in an advisory policy decision if the sender gave none;
+    add the hash-chain link; save the row and update the inventory.
+    """
     validate(event)
 
     # Idempotent: re-collecting the same upstream record is a no-op.
@@ -60,14 +70,19 @@ def ingest_event(db: Session, event: dict) -> AuditEvent:
     if existing:
         return existing
 
+    # Work on a copy so the caller's dict is left unchanged. received_at is set by the server, not trusted from the sender.
     event = dict(event)
     event["received_at"] = utcnow().isoformat()
 
+    # A sender that already made a decision (the gateway) keeps it; otherwise ask OPA what it would have done.
     if "decision" not in event or event.get("decision") is None:
         adv = advisory_decision(event)
         if adv:
             event["decision"] = adv
 
+    # Hash chain: each event's hash covers the previous hash plus the event itself, so
+    # changing or deleting any stored event breaks every hash after it. verify_chain()
+    # re-computes the chain to detect this. The first event links to 64 zeros.
     prev_hash = None
     this_hash = None
     if settings.hash_chain_enabled:
@@ -76,6 +91,7 @@ def ingest_event(db: Session, event: dict) -> AuditEvent:
         this_hash = hashlib.sha256(prev_hash.encode() + _canonical(event)).hexdigest()
         event["integrity"] = {"prev_hash": prev_hash, "hash": this_hash}
 
+    # Copy the fields the console filters on into their own columns; the full event stays in `body`.
     dlp = event.get("content", {}).get("dlp_findings") or []
     row = AuditEvent(
         event_id=event["event_id"],
@@ -92,6 +108,7 @@ def ingest_event(db: Session, event: dict) -> AuditEvent:
         prev_hash=prev_hash,
         hash=this_hash,
     )
+# The row and the inventory update are saved in one commit, so they succeed or fail together.
     db.add(row)
     _upsert_system(db, event)
     db.commit()
@@ -104,6 +121,9 @@ def _aware(dt: datetime) -> datetime:
 
 
 def _upsert_system(db: Session, event: dict) -> None:
+    """Keep the AI inventory current: add the target system if it is new, then update its
+    first/last seen times, event count and sources. Seeing an "enforced" event (one that
+    passed through the gateway) upgrades a system from "observed" to "governed"."""
     key = event["target"]["ai_system"]
     ts = datetime.fromisoformat(event["timestamp"])
     sys_row = db.get(AISystem, key)
@@ -134,10 +154,12 @@ def verify_chain(db: Session) -> dict:
     rows = db.scalars(select(AuditEvent).order_by(AuditEvent.seq)).all()
     prev = "0" * 64
     for r in rows:
+        # Events stored before hash chaining was switched on have no hash; skip them.
         if r.hash is None:
             continue
         body = dict(r.body)
         body.pop("integrity", None)
+        # Recompute what this hash should be from the previous hash plus the stored event (minus its integrity block).
         expect = hashlib.sha256(prev.encode() + _canonical(body)).hexdigest()
         if expect != r.hash or r.prev_hash != prev:
             return {"ok": False, "broken_at_seq": r.seq, "checked": len(rows)}

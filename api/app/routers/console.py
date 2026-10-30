@@ -21,6 +21,8 @@ templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / 
 
 
 def _ctx(request: Request, **kw):
+    """Template variables for every console page. Looks up the current user itself so a page
+    can show the name and role; imports are local to avoid a circular import at load time."""
     from ..auth import current_user
     from ..db import SessionLocal
     db = SessionLocal()
@@ -33,6 +35,7 @@ def _ctx(request: Request, **kw):
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, db: Session = Depends(get_db)):
+    """Home page: headline counts, the AI inventory, unapproved systems and recent flagged events."""
     s = stats_endpoint(db)
     systems = db.scalars(select(AISystem)).all()
     recent_dlp = db.scalars(
@@ -46,12 +49,15 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/inventory", response_class=HTMLResponse)
 def inventory(request: Request, db: Session = Depends(get_db)):
+    """The AI inventory table, busiest systems first."""
     systems = db.scalars(select(AISystem).order_by(AISystem.event_count.desc())).all()
     return templates.TemplateResponse(request, "inventory.html", _ctx(request, systems=systems))
 
 
 @router.get("/events", response_class=HTMLResponse)
 def events_page(request: Request, db: Session = Depends(get_db), ai_system: str | None = None, dlp: int = 0):
+    """Latest 200 audit events, newest first, optionally filtered by system or flagged content."""
+    # Build the query step by step: newest first, then add whichever filters were chosen.
     q = select(AuditEvent).order_by(AuditEvent.seq.desc())
     if ai_system:
         q = q.where(AuditEvent.ai_system == ai_system)
@@ -63,22 +69,26 @@ def events_page(request: Request, db: Session = Depends(get_db), ai_system: str 
 
 @router.get("/evidence", response_class=HTMLResponse)
 def evidence_page(request: Request, db: Session = Depends(get_db)):
+    """The evidence report as an HTML page."""
     return templates.TemplateResponse(request, "evidence.html", _ctx(request, report=build_report(db)))
 
 
 @router.get("/evidence/report.md", response_class=PlainTextResponse)
 def evidence_md(db: Session = Depends(get_db)):
+    """The same report as downloadable Markdown."""
     return report_markdown(build_report(db))
 
 
 @router.get("/evidence/report.json")
 def evidence_json(db: Session = Depends(get_db)):
+    """The same report as JSON, for other tools."""
     return build_report(db)
 
 
 # ---------- inventory editing (HTML forms) ----------
 
 def _tri(v: str) -> bool | None:
+    """Convert a yes/no/unknown form choice to True/False/None (None means "not decided yet")."""
     return {"yes": True, "no": False}.get(v)
 
 
@@ -91,6 +101,7 @@ def declare_form(request: Request, user: User = Depends(require_user_page)):
 def declare_submit(request: Request, key: str = Form(...), display_name: str = Form(""), vendor: str = Form(""),
                    hosting: str = Form("unknown"), approved: str = Form("unknown"), cui_in_scope: str = Form("unknown"),
                    owner: str = Form(""), notes: str = Form(""), user: User = Depends(require_user_page), db: Session = Depends(get_db)):
+    """Register an AI tool by hand (state "declared"). Admins only. Keys are lower-cased and must be unique."""
     if user.role != "admin":
         raise HTTPException(403, "admin role required")
     key = key.strip().lower()
@@ -105,6 +116,8 @@ def declare_submit(request: Request, key: str = Form(...), display_name: str = F
 
 @router.get("/inventory/{key}", response_class=HTMLResponse)
 def system_page(key: str, request: Request, user: User = Depends(require_user_page), db: Session = Depends(get_db)):
+    """One system: its details, recent events and the history of changes people made to it.
+    Viewers can see the page; only admins can save edits."""
     s = db.get(AISystem, key)
     if not s:
         raise HTTPException(404, "unknown system")
@@ -120,6 +133,7 @@ def system_page(key: str, request: Request, user: User = Depends(require_user_pa
 def system_submit(key: str, request: Request, display_name: str = Form(""), vendor: str = Form(""), hosting: str = Form("unknown"),
                   approved: str = Form("unknown"), cui_in_scope: str = Form("unknown"), owner: str = Form(""), notes: str = Form(""),
                   user: User = Depends(require_user_page), db: Session = Depends(get_db)):
+    """Save edits to an inventory entry. Admins only. Each real change is audited."""
     if user.role != "admin":
         raise HTTPException(403, "admin role required")
     s = db.get(AISystem, key)

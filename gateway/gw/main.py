@@ -1,4 +1,4 @@
-"""AI Control Plane — inline gateway.
+"""Gyrai — inline gateway.
 
 OpenAI-compatible proxy. Apps set base_url to this service and keep working.
 
@@ -24,12 +24,13 @@ from .identity import identify
 from .policy import effective_action, evaluate
 
 log = logging.getLogger("aicp.gateway")
-app = FastAPI(title="AI Control Plane Gateway", version="0.1.0")
+app = FastAPI(title="Gyrai Gateway", version="0.1.0")
 
 
 # ---------- helpers ----------
 
 def _sha(s: str) -> str:
+    """SHA-256 of the text. Audit events carry hashes, never the prompt or response itself."""
     return hashlib.sha256(s.encode("utf-8", "replace")).hexdigest()
 
 
@@ -51,6 +52,7 @@ def _text_of_messages(messages: list[dict]) -> str:
 
 
 def _count_attachments(messages: list[dict]) -> int:
+    """Count non-text message parts (images, files) so the audit event can note them."""
     n = 0
     for m in messages or []:
         if isinstance(m.get("content"), list):
@@ -59,6 +61,8 @@ def _count_attachments(messages: list[dict]) -> int:
 
 
 def _apply_to_messages(messages: list[dict], fn) -> list[dict]:
+    """Return a copy of the messages with `fn` applied to every text part (used for masking).
+    The caller's original list is not modified."""
     out = []
     for m in messages:
         m = dict(m)
@@ -72,6 +76,8 @@ def _apply_to_messages(messages: list[dict], fn) -> list[dict]:
 
 
 def _target(payload: dict, local: bool = False) -> dict:
+    """Describe the model being called for the audit event: system, model id, hosting and endpoint.
+    `local=True` describes the on-prem model used by the route_local action."""
     return {
         "ai_system": "gateway.local" if local else settings.upstream_system_key,
         "model_id": payload.get("model", ""),
@@ -81,6 +87,12 @@ def _target(payload: dict, local: bool = False) -> dict:
 
 
 async def _forward(path: str, payload: dict, stream: bool, local: bool = False) -> httpx.Response:
+    """Send the request to the upstream model and return its response.
+
+    The gateway's own provider key is attached here, so client apps never hold one.
+    The HTTP client must outlive this function when streaming, so it is stored on the
+    response as `_aicp_client` and the caller closes it once the body has been read.
+    """
     base = settings.local_upstream_url if local else settings.upstream_url
     key = settings.local_upstream_key if local else settings.upstream_key
     headers = {"Content-Type": "application/json"}
@@ -102,11 +114,13 @@ async def _forward(path: str, payload: dict, stream: bool, local: bool = False) 
 
 @app.get("/healthz")
 def healthz():
+    """Liveness probe. Also reports the mode so operators can see monitor vs enforce at a glance."""
     return {"ok": True, "mode": settings.mode}
 
 
 @app.get("/v1/models")
 async def models(request: Request):
+    """Pass the model list through from the upstream. The caller is still identified."""
     identify(request)
     r = await _forward("/v1/models", {}, stream=False)
     body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"data": []}
@@ -116,6 +130,8 @@ async def models(request: Request):
 
 @app.post("/v1/embeddings")
 async def embeddings(request: Request):
+    """Embeddings follow the same stages as chat (identify, scan, decide, forward, audit),
+    but there is no streaming and no response text to scan."""
     actor = identify(request)
     payload = await request.json()
     inp = payload.get("input", "")
@@ -124,6 +140,7 @@ async def embeddings(request: Request):
     ev = new_event("ai.embedding.created", actor, _target(payload),
                    content={"prompt_sha256": _sha(text), "prompt_tokens": max(1, len(text) // 4),
                             **({"dlp_findings": findings} if findings else {})})
+    # Reclassify the event so scanner hits show up as DLP matches in the console.
     if findings:
         ev["event_type"] = "ai.dlp.match"
     ev["decision"] = evaluate(ev)
@@ -147,21 +164,27 @@ async def embeddings(request: Request):
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
+    """The main route. Stages: identify the caller, scan the prompt, ask policy, then
+    block, mask, reroute or allow, forward upstream, and audit both prompt and response."""
     actor = identify(request)
     payload = await request.json()
     messages = payload.get("messages", [])
     stream = bool(payload.get("stream"))
 
     # ---- Stage 2: ingress ----
+    # Flatten every message into one string so a single scan covers system, user and tool-call text.
     text = _text_of_messages(messages)
     findings = scan(text)
+    # The audit event holds only a hash, a token estimate and the scan results. The prompt text is never stored.
     content = {"prompt_sha256": _sha(text), "prompt_tokens": max(1, len(text) // 4),
                "attachments": _count_attachments(messages)}
     if findings:
         content["dlp_findings"] = findings
     ev = new_event("ai.dlp.match" if findings else "ai.prompt.submitted", actor, _target(payload), content=content)
+    # Calls that offer tools to the model are marked, so tool use is visible in the inventory.
     if payload.get("tools"):
         ev["target"]["tool_server"] = "inline"
+    # Ask policy what it says, then work out what to do. Monitor mode always resolves to "allow".
     ev["decision"] = evaluate(ev)
     act = effective_action(ev["decision"])
 
@@ -171,6 +194,8 @@ async def chat_completions(request: Request):
         sink().emit(ev)
         raise HTTPException(403, {"error": "blocked by policy", "policy_id": ev["decision"]["policy_id"], "reason": ev["decision"]["reason"]})
 
+    # Maps each placeholder inserted by masking back to the original value, so the
+    # model's reply can be restored before the user sees it. It never leaves this request.
     vault: dict[str, str] = {}
     if act == "mask":
         def _mask(s: str) -> str:
@@ -190,6 +215,7 @@ async def chat_completions(request: Request):
     # ---- Stage 3/4: forward + egress ----
     r = await _forward("/v1/chat/completions", payload, stream=stream, local=local)
 
+    # Upstream errors go straight back to the caller; no response event is audited for them.
     if r.status_code >= 400 and not stream:
         body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"error": r.text}
         await r._aicp_client.aclose()
@@ -207,11 +233,14 @@ async def chat_completions(request: Request):
         _emit_response(actor, ev["target"], out_text, body.get("usage") or {}, vault)
         return JSONResponse(body, status_code=r.status_code)
 
+    # Streaming: chunks are relayed as they arrive, and the response event is audited when the stream ends.
     return StreamingResponse(_stream(r, actor, ev["target"], vault), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 def _emit_response(actor: dict, target: dict, out_text: str, usage: dict, vault: dict) -> None:
+    """Scan the model's reply and audit it. Uses the provider's token count when given,
+    otherwise estimates about four characters per token."""
     findings = scan(out_text)
     content = {"response_sha256": _sha(out_text),
                "response_tokens": usage.get("completion_tokens") or max(1, len(out_text) // 4)}
@@ -234,6 +263,7 @@ async def _stream(r: httpx.Response, actor: dict, target: dict, vault: dict) -> 
             if not line:
                 yield b"\n"
                 continue
+            # Server-sent events: each "data:" line carries a JSON chunk holding the next piece of text.
             if line.startswith("data: ") and line != "data: [DONE]":
                 try:
                     chunk = json.loads(line[6:])

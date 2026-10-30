@@ -13,10 +13,14 @@ from .config import settings
 
 
 class Base(DeclarativeBase):
-    pass
+    """Common base for all ORM tables; Base.metadata is what init_db() creates."""
 
 
 class AuditEvent(Base):
+    """One audit event. The searchable columns are copied out of `body` so the console
+    can filter and sort quickly; `body` keeps the complete original event.
+    `prev_hash` and `hash` link each row to the one before it (see ingest.py)."""
+
     __tablename__ = "audit_events"
 
     # Surrogate key keeps inserts cheap and ordered for hash-chaining.
@@ -38,6 +42,8 @@ class AuditEvent(Base):
 
 
 class AISystem(Base):
+    """One entry in the AI inventory: a model, tool or agent that has been seen or declared."""
+
     __tablename__ = "ai_systems"
 
     key: Mapped[str] = mapped_column(String(128), primary_key=True)
@@ -58,6 +64,8 @@ class AISystem(Base):
 
 
 class User(Base):
+    """A console login. Only a bcrypt hash of the password is stored."""
+
     __tablename__ = "users"
 
     username: Mapped[str] = mapped_column(String(128), primary_key=True)
@@ -72,6 +80,8 @@ class User(Base):
 
 
 def _make_engine(url: str):
+    """Create the SQLAlchemy engine. SQLite gets two tweaks: allow use from several threads
+    (FastAPI runs handlers in a pool) and write-ahead logging so readers do not block the writer."""
     kwargs = {"future": True}
     if url.startswith("sqlite"):
         kwargs["connect_args"] = {"check_same_thread": False}
@@ -88,10 +98,12 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 
 
 def init_db() -> None:
+    """Create any missing tables. Safe to call on every startup."""
     Base.metadata.create_all(engine)
 
 
 def get_db():
+    """FastAPI dependency: give a handler its own database session and always close it."""
     db = SessionLocal()
     try:
         yield db
@@ -100,4 +112,5 @@ def get_db():
 
 
 def utcnow() -> datetime:
+    """Current time as a timezone-aware UTC datetime. Use this instead of datetime.now()."""
     return datetime.now(timezone.utc)

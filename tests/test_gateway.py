@@ -144,7 +144,7 @@ def test_agent_key_carries_sponsor(client, wire):
 
 def test_events_validate_against_schema(wire, client):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
-    from app.ingest import validate  # the control plane's validator
+    from app.ingest import validate  # the governance plane's validator
     chat(client, "hello")
     client.post("/v1/embeddings", headers=ALICE, json={"model": "e", "input": "x"})
     for e in wire.events:

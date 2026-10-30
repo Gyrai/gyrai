@@ -14,6 +14,7 @@ app = FastAPI(title="Mock OpenAI")
 
 
 def _last_user_text(messages):
+    """Return the text of the most recent user message, handling plain and multi-part content."""
     for m in reversed(messages or []):
         if m.get("role") == "user":
             c = m.get("content")
@@ -31,6 +32,7 @@ def models():
 
 @app.post("/v1/embeddings")
 async def embeddings(request: Request):
+    """Return a fixed three-number vector per input; real vectors are not needed for tests."""
     body = await request.json()
     inputs = body["input"] if isinstance(body["input"], list) else [body["input"]]
     return {"object": "list", "model": body.get("model", "mock-embed"),
@@ -40,6 +42,7 @@ async def embeddings(request: Request):
 
 @app.post("/v1/chat/completions")
 async def chat(request: Request):
+    """Echo the last user message, streamed word by word when `stream` is true."""
     body = await request.json()
     echo = "You said: " + _last_user_text(body.get("messages"))
     rid = f"chatcmpl-{uuid.uuid4().hex[:12]}"

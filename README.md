@@ -1,6 +1,6 @@
-# AI Control Plane
+# Gyrai
 
-AI usage monitoring, inventory, and compliance evidence for organizations that handle regulated data (CUI, ITAR, PII). Built by Consultant Works.
+AI usage monitoring, inventory and audit evidence for organizations that need to govern how AI is used, including those that handle regulated data. Pronounced "JY-rye". Built by Consultant Works and released under the Apache License 2.0.
 
 **Today (v0.1): monitor mode.** Collectors pull AI usage from systems the customer already has (Microsoft 365 / Copilot, log exports), normalize everything into one audit schema, score it against policy, and generate NIST SP 800-171 evidence.
 
@@ -65,7 +65,7 @@ Every request goes through four stages, one module each in `gateway/gw/`:
 | Identify | `identity.py` | Maps the app's gateway key to a user/agent identity. The provider key never leaves the gateway. |
 | Ingress | `main.py` + `policy.py` | Extracts prompt text, runs the DLP scanner, asks OPA. **monitor**: record and pass through. **enforce**: `block` → 403 with policy ID; `mask` → replace flagged values with placeholders; `route_local` → send to the on-prem model instead. |
 | Forward | `main.py` | Proxies to the upstream, streaming or not. |
-| Egress | `main.py` + `audit.py` | Scans the response, restores masked values, emits the audit event. Audit is non-blocking and spills to a local file if the control plane is down. |
+| Egress | `main.py` + `audit.py` | Scans the response, restores masked values, emits the audit event. Audit is non-blocking and spills to a local file if the governance plane is down. |
 
 Try it (the demo profile includes a fake model that echoes your prompt):
 
@@ -97,7 +97,7 @@ What the gateway does **not** do yet, by design: streaming responses are scanned
 
 ## Console access and audit of the tool itself
 
-Local accounts (bcrypt, signed session cookie, lockout after 10 failures, 12-char minimum). Two roles: `admin` (edit inventory) and `viewer`. Every login, failed login, logout, password change and inventory edit is written to the audit store as an `ai.admin.change` event, so the control plane's own access is part of the evidence package (3.3.1, 3.3.2, CM-3). Collectors, the gateway and the forwarder authenticate with the machine token, not a session. Entra/Okta OIDC login is additive in 0.3; local accounts stay for air-gapped sites.
+Local accounts (bcrypt, signed session cookie, lockout after 10 failures, 12-char minimum). Two roles: `admin` (edit inventory) and `viewer`. Every login, failed login, logout, password change and inventory edit is written to the audit store as an `ai.admin.change` event, so the governance plane's own access is part of the evidence package (3.3.1, 3.3.2, CM-3). Collectors, the gateway and the forwarder authenticate with the machine token, not a session. Entra/Okta OIDC login is additive in 0.3; local accounts stay for air-gapped sites.
 
 ## SIEM forwarding
 
@@ -127,8 +127,8 @@ Subclass `Collector` in `collectors/aicp_collectors/`, implement `fetch(since)` 
 ```bash
 git init -b main
 git add .
-git commit -m "AI Control Plane v0.1: monitor mode"
-gh repo create consultantworks-ai/ai-control-plane --private --source . --push
+git commit -m "Gyrai v0.1: monitor mode"
+gh repo create gyrai/gyrai --private --source . --push
 ```
 
 Then in the repo settings: protect `main` (require PR + passing CI), enable Dependabot and CodeQL.
@@ -150,3 +150,11 @@ Then in the repo settings: protect `main` (require PR + passing CI), enable Depe
 | 0.4 | MCP proxy for agent tool calls, human-in-the-loop approvals |
 | 0.5 | Presidio + local classifier DLP, streaming egress scanning |
 | 1.0 | Helm chart, Iron Bank hardening, air-gap mode, AI RMF + 800-53 evidence packs |
+
+## Documentation
+
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) is a code map. It shows how the gateway, collectors, API and forwarder fit together, with flow and sequence diagrams that name the files and functions involved. Start there if you want to read or change the code.
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). To report a security issue, see [SECURITY.md](SECURITY.md). To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).

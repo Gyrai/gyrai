@@ -47,6 +47,8 @@ AI_APPS = {
 
 
 class M365Collector(Collector):
+    """Collects AI-related activity from one Microsoft 365 tenant through Microsoft Graph."""
+
     source = "collector.m365"
     observation_level = "metadata_only"  # per-event override below
 
@@ -60,6 +62,8 @@ class M365Collector(Collector):
 
     # ---- auth ----
     def _auth(self) -> str:
+        """Get an app-only access token (client-credentials flow) and cache it. Not refreshed:
+        a run is short, and the token is fetched again on the next run."""
         if self._token:
             return self._token
         r = httpx.post(
@@ -81,6 +85,7 @@ class M365Collector(Collector):
         full = url if url.startswith("http") else f"{GRAPH}/{'beta' if beta else 'v1.0'}{url}"
         while full:
             r = httpx.get(full, params=params, headers={"Authorization": f"Bearer {self._auth()}"}, timeout=60.0)
+            # 403 or 404 usually means the tenant lacks the license or admin consent for this data. Skip it rather than failing the whole run.
             if r.status_code in (403, 404):
                 log.warning("%s -> %s (capability not licensed or not consented); skipping", url, r.status_code)
                 return
@@ -91,10 +96,14 @@ class M365Collector(Collector):
 
     # ---- fetch ----
     def fetch(self, since: datetime) -> Iterable[dict]:
+        """Yield records from the three Graph sources. Each is tagged with `_kind` so normalize()
+        knows how to convert it."""
+        # Graph filters need UTC timestamps in exactly this format.
         iso = since.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # 1. Sign-ins to AI apps
         for s in self._get("/auditLogs/signIns", {"$filter": f"createdDateTime ge {iso}", "$top": 999}):
+            # Keep only sign-ins to known AI apps, plus apps whose names look like AI tools.
             if s.get("appDisplayName") in AI_APPS or self._looks_like_ai(s.get("appDisplayName", "")):
                 yield {"_kind": "signin", **s}
 
@@ -111,11 +120,14 @@ class M365Collector(Collector):
 
     @staticmethod
     def _looks_like_ai(name: str) -> bool:
+        """Rough check for AI apps not in AI_APPS. It can over-match; the inventory page lets an
+        admin review whatever it finds."""
         n = name.lower()
         return any(k in n for k in ("copilot", "gpt", "openai", "claude", "gemini", " ai", "ai ", "llm"))
 
     # ---- normalize ----
     def normalize(self, rec: dict) -> dict | None:
+        """Route a record to the converter for its kind (sign-in, Copilot interaction, DLP alert)."""
         kind = rec["_kind"]
         if kind == "signin":
             return self._signin(rec)
@@ -126,7 +138,9 @@ class M365Collector(Collector):
         return None
 
     def _signin(self, s: dict) -> dict:
+        """A sign-in to an AI app. Metadata only: who, from where, to which app."""
         app = s.get("appDisplayName", "")
+        # Known apps get a stable system key; unknown ones get a key derived from the app name.
         key, hosting = AI_APPS.get(app, (f"entra.{app.lower().replace(' ', '_')}", "external_saas"))
         ts = datetime.fromisoformat(s["createdDateTime"].replace("Z", "+00:00"))
         ev = self.base_event("ai.signin", ts, s["id"])
@@ -137,7 +151,9 @@ class M365Collector(Collector):
         return ev
 
     def _copilot(self, ix: dict) -> dict:
+        """A Copilot prompt or reply. The text is scanned and then kept only as a hash."""
         ts = datetime.fromisoformat(ix["createdDateTime"].replace("Z", "+00:00"))
+        # Copilot history holds both the user's prompts and Copilot's replies; they become different event types.
         is_prompt = (ix.get("interactionType") or "").lower() == "userprompt"
         ev = self.base_event("ai.prompt.submitted" if is_prompt else "ai.response.delivered", ts, ix["id"])
         ev["observation_level"] = "content_visible"
@@ -146,6 +162,7 @@ class M365Collector(Collector):
                        "display_name": user.get("displayName", "")}
         ev["target"] = {"ai_system": "m365.copilot", "hosting": "cloud_tenant",
                         "model_id": ix.get("appClass", "copilot")}
+        # Only a hash of the text is kept. A scanner hit changes the event type so it stands out.
         text = ((ix.get("body") or {}).get("content")) or ""
         attachments = len(ix.get("attachments") or [])
         content = {"attachments": attachments}
@@ -159,9 +176,11 @@ class M365Collector(Collector):
         return ev
 
     def _alert(self, a: dict) -> dict:
+        """A Purview DLP alert. We record that a match happened and who it involved, not what matched."""
         ts = datetime.fromisoformat(a["createdDateTime"].replace("Z", "+00:00"))
         ev = self.base_event("ai.dlp.match", ts, a["id"])
         ev["observation_level"] = "content_visible"
+        # Alerts list evidence items; take the first user account as the person involved.
         users = [e for e in a.get("evidence", []) if e.get("@odata.type", "").endswith("userEvidence")]
         upn = ((users[0].get("userAccount") or {}).get("userPrincipalName")) if users else ""
         ev["actor"] = {"type": "human", "id": upn or ""}

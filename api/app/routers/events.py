@@ -1,3 +1,9 @@
+"""Audit-event API: ingest, query, statistics, integrity check and the forwarder feed.
+
+Two kinds of caller, two kinds of credential:
+  machines (collectors, gateway, forwarder) use the shared ingest token;
+  people (console, scripts) use a logged-in session.
+"""
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -11,6 +17,7 @@ router = APIRouter(prefix="/api/v1", tags=["events"])
 
 
 def require_ingest_token(authorization: str = Header(default="")) -> None:
+    """Dependency that rejects any request without the shared machine token."""
     if authorization != f"Bearer {settings.ingest_token}":
         raise HTTPException(status_code=401, detail="invalid ingest token")
 
@@ -37,6 +44,7 @@ def list_events(
     actor_id: str | None = None,
     dlp_only: bool = False,
 ):
+    # Build the query step by step: newest first, then add whichever filters were requested.
     q = select(AuditEvent).order_by(AuditEvent.seq.desc())
     if ai_system:
         q = q.where(AuditEvent.ai_system == ai_system)
@@ -51,6 +59,8 @@ def list_events(
 
 @router.get("/events/stats", dependencies=[Depends(require_user)])
 def stats(db: Session = Depends(get_db)):
+    """Counts for the dashboard. `advisory_would_act` is how many events policy would have
+    blocked, masked or sent for approval, which is the number that shows what enforce mode would change."""
     total = db.scalar(select(func.count(AuditEvent.seq))) or 0
     by_level = dict(db.execute(
         select(AuditEvent.observation_level, func.count()).group_by(AuditEvent.observation_level)
@@ -73,6 +83,7 @@ def stats(db: Session = Depends(get_db)):
 
 @router.get("/events/integrity", dependencies=[Depends(require_user)])
 def integrity(db: Session = Depends(get_db)):
+    """Re-check the hash chain over every stored event. {"ok": false} means something was altered or removed."""
     return verify_chain(db)
 
 

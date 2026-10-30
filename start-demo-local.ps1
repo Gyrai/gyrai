@@ -1,5 +1,5 @@
-# AI Control Plane — demo WITHOUT Docker. Uses the Python already on this PC.
-# Starts: control plane API (8000), mock model (9999), gateway (8080), and OPA (8181) if policies\opa.exe exists.
+# Gyrai — demo WITHOUT Docker. Uses the Python already on this PC.
+# Starts: governance plane API (8000), mock model (9999), gateway (8080), and OPA (8181) if policies\opa.exe exists.
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 Set-Location $root

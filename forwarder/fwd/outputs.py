@@ -12,6 +12,9 @@ log = logging.getLogger("aicp.forwarder")
 
 
 class Output:
+    """Interface every SIEM adapter follows: send() takes a list of schema events and returns
+    True only if the destination accepted them all. Returning False makes the forwarder retry the
+    same batch later, so adapters must not raise for ordinary network errors."""
     name = "base"
 
     def send(self, events: list[dict]) -> bool:  # pragma: no cover - interface
@@ -33,6 +36,7 @@ class FileOutput(Output):
 
 
 class SplunkHECOutput(Output):
+    """Splunk HTTP Event Collector. Sends one JSON line per event with the original event time."""
     name = "splunk_hec"
 
     def __init__(self, url: str, token: str, index: str = "", sourcetype: str = "aicp:audit", verify: bool = True):
@@ -41,6 +45,7 @@ class SplunkHECOutput(Output):
     def send(self, events):
         lines = []
         for e in events:
+            # Use the event's own time so the Splunk timeline shows when things happened, not when they were forwarded.
             rec = {"time": datetime.fromisoformat(e["timestamp"]).timestamp(), "sourcetype": self.sourcetype,
                    "source": "aicp", "event": e}
             if self.index:
@@ -109,9 +114,12 @@ class SyslogCEFOutput(Output):
 
     @staticmethod
     def _esc(v) -> str:
+        """Escape a value for a CEF extension field (backslash and equals sign; newlines become spaces)."""
         return str(v).replace("\\", "\\\\").replace("=", "\\=").replace("\n", " ")
 
     def cef(self, e: dict) -> str:
+        """Format one event as a CEF line. Severity (0-10) rises with how strongly policy acted:
+        block 7, require_approval 6, mask 5, route_local 4, otherwise 3; policy violations are 8."""
         d = e.get("decision") or {}
         sev = {"block": 7, "require_approval": 6, "mask": 5, "route_local": 4}.get(d.get("action"), 3)
         if e["event_type"] in ("ai.policy.violation",):
@@ -126,7 +134,7 @@ class SyslogCEFOutput(Output):
             "externalId": e["event_id"], "msg": d.get("reason", ""),
         }
         ext_s = " ".join(f"{k}={self._esc(v)}" for k, v in ext.items() if v != "")
-        return f"CEF:0|ConsultantWorks|AIControlPlane|1.0|{e['event_type']}|{e['event_type']}|{sev}|{ext_s}"
+        return f"CEF:0|ConsultantWorks|Gyrai|1.0|{e['event_type']}|{e['event_type']}|{sev}|{ext_s}"
 
     def send(self, events):
         ts = datetime.now(timezone.utc).strftime("%b %d %H:%M:%S")

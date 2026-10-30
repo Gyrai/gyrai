@@ -1,3 +1,4 @@
+"""Collector tests: the content scanner (DLP) and the file collector."""
 import json
 from pathlib import Path
 

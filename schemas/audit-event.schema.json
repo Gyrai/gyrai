@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://consultant.works/schemas/aicp/audit-event/1.0.0",
-  "title": "AI Control Plane Audit Event",
+  "title": "Gyrai Audit Event",
   "description": "One observed or enforced AI interaction. Written by collectors (monitor mode) today and by the inline gateway (enforce mode) later. Every consumer (UI, evidence engine, SIEM forwarder) reads only this shape.",
   "type": "object",
   "required": [

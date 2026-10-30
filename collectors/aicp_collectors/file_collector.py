@@ -16,6 +16,9 @@ from .dlp import scan
 
 
 class FileCollector(Collector):
+    """Reads a JSONL file, one record per line. Records that are already schema events pass
+    through unchanged; any other record is converted using the field names in normalize()."""
+
     source = "collector.file"
     observation_level = "content_visible"
 
@@ -24,6 +27,8 @@ class FileCollector(Collector):
         self.path = Path(path)
 
     def fetch(self, since: datetime) -> Iterable[dict]:
+        """Yield every line of the file. `since` is ignored: the whole file is read each run, and the
+        API discards events it has already stored (same event_id)."""
         with self.path.open() as f:
             for i, line in enumerate(f):
                 line = line.strip()
@@ -33,7 +38,9 @@ class FileCollector(Collector):
                     yield rec
 
     def normalize(self, rec: dict) -> dict | None:
-        # Already a schema event? Pass through, but scan text if present and strip it.
+        """Convert a generic record (user, ai_system, model, text ...) to a schema event. Any `text` is
+        scanned for sensitive content and then replaced by a hash and a token estimate."""
+        # Already a schema event: pass it through untouched.
         if rec.get("schema_version") == "1.0.0":
             return rec
         ts = datetime.fromisoformat(rec.get("timestamp") or datetime.now(timezone.utc).isoformat())

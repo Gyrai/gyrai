@@ -4,6 +4,10 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    """API settings, read from AICP_* environment variables or a .env file. Field names map
+    to variables, e.g. `ingest_token` is AICP_INGEST_TOKEN. One shared instance, `settings`,
+    is used everywhere."""
+
     # SQLite by default so the API runs with zero dependencies in dev/tests.
     # Compose overrides this with a Postgres URL.
     database_url: str = "sqlite:///./aicp.db"
@@ -33,7 +37,7 @@ class Settings(BaseSettings):
 
     # Branding for evidence reports.
     org_name: str = "Consultant Works"
-    product_name: str = "AI Control Plane"
+    product_name: str = "Gyrai"
 
     model_config = {"env_prefix": "AICP_", "env_file": ".env", "extra": "ignore"}
 

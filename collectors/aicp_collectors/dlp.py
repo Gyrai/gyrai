@@ -7,6 +7,8 @@ Raw text never leaves this process; only categories and counts are emitted.
 """
 import re
 
+# category -> [(detector name, compiled pattern)]. To add a detector, append a pair to an
+# existing category. A new category also needs adding to the schema's allowed list.
 PATTERNS: dict[str, list[tuple[str, re.Pattern]]] = {
     "CUI_MARKING": [
         ("cui_banner", re.compile(r"\bCUI//(?:SP-)?[A-Z]{2,}(?:/[A-Z-]+)*", re.I)),
@@ -38,6 +40,8 @@ PATTERNS: dict[str, list[tuple[str, re.Pattern]]] = {
 
 
 def scan(text: str) -> list[dict]:
+    """Look for every pattern in the text and return one finding per detector that matched:
+    {"category", "detector", "count", "confidence"}. Findings hold counts only, never the matched text."""
     findings = []
     for category, detectors in PATTERNS.items():
         for name, rx in detectors:
@@ -57,14 +61,18 @@ def scan(text: str) -> list[dict]:
 # For CUI-marked prompts the default policy blocks or routes locally instead; mask
 # is intended for identifiers (keys, SSNs, CAGE codes) inside otherwise-OK text.
 
+# Categories safe to mask. Markings and ITAR terms are not here on purpose (see the note above).
 MASKABLE = {"SECRET", "PII", "CAGE_CODE"}
 
 
 def redact(text: str, categories: set[str] | None = None) -> tuple[str, dict[str, str]]:
+    """Replace matches with numbered placeholders. Returns (masked text, vault), where the vault
+    maps each placeholder back to the original so unredact() can restore it."""
     cats = categories or MASKABLE
     vault: dict[str, str] = {}
     out = text
     n = 0
+    # Each match gets a numbered placeholder. The counter n is shared across categories so no number repeats.
     for category in cats:
         for _name, rx in PATTERNS.get(category, []):
             def _sub(m, _c=category):
@@ -78,6 +86,7 @@ def redact(text: str, categories: set[str] | None = None) -> tuple[str, dict[str
 
 
 def unredact(text: str, vault: dict[str, str]) -> str:
+    """Put the original values back wherever the model's reply repeats a placeholder."""
     for ph, original in vault.items():
         text = text.replace(ph, original)
     return text
