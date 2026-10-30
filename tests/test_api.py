@@ -194,3 +194,19 @@ def test_declare_form(client):
     assert s["governance_state"] == "declared" and s["approved"] is None
     # declaring twice is rejected
     assert client.post("/inventory/new", data={"key": "adobe.acrobat-ai"}).status_code == 409
+
+
+def test_default_ingest_token_warns(caplog):
+    """The API logs a warning at startup while the ingest token is the development default."""
+    from app import main as api_main
+    from app.config import settings
+    old = settings.ingest_token
+    try:
+        settings.ingest_token = api_main.DEFAULT_INGEST_TOKEN
+        with caplog.at_level("WARNING", logger="aicp.api"):
+            assert api_main.warn_if_default_token() is True
+        assert "development default" in caplog.text
+        settings.ingest_token = "a-real-secret"
+        assert api_main.warn_if_default_token() is False
+    finally:
+        settings.ingest_token = old

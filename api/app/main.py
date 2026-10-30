@@ -6,6 +6,7 @@ This module only wires things together. The work happens in the routers:
   console    - the HTML pages operators use
   auth_pages - login, logout and password change
 """
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -18,10 +19,27 @@ from .config import settings
 from .db import init_db
 from .routers import auth_pages, console, events, inventory
 
+log = logging.getLogger("aicp.api")
+
+# The built-in development token. Anyone who has read the source knows it.
+DEFAULT_INGEST_TOKEN = "dev-ingest-token-change-me"
+
+
+def warn_if_default_token() -> bool:
+    """Log a warning when the ingest token is still the development default.
+    Returns True when the warning fired. Set AICP_INGEST_TOKEN to a long random value."""
+    if settings.ingest_token == DEFAULT_INGEST_TOKEN:
+        log.warning("AICP_INGEST_TOKEN is still the development default. Anyone can send events "
+                    "to this API. Set it to a long random value before exposing the API.")
+        return True
+    return False
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """Startup work: create tables, then make sure at least one admin account exists."""
+    """Startup work: warn about the default token, create tables, then make sure at least
+    one admin account exists."""
+    warn_if_default_token()
     init_db()
     bootstrap_admin()
     yield

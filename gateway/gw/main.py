@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import httpx
 from aicp_collectors.dlp import redact, scan, unredact
@@ -24,7 +25,18 @@ from .identity import identify
 from .policy import effective_action, evaluate
 
 log = logging.getLogger("aicp.gateway")
-app = FastAPI(title="Gyrai Gateway", version="0.1.0")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Startup: warn when the token used to send audit events is still the development default."""
+    if settings.ingest_token == "dev-ingest-token-change-me":
+        log.warning("AICP_GW_INGEST_TOKEN is still the development default. Set it to the same "
+                    "long random value as the API's AICP_INGEST_TOKEN before real use.")
+    yield
+
+
+app = FastAPI(title="Gyrai Gateway", version="0.1.0", lifespan=lifespan)
 
 
 # ---------- helpers ----------
