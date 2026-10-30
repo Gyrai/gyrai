@@ -115,5 +115,5 @@ def test_syslog_cef_over_tcp(api, tmp_path):
     t.join(5)
     srv.close()
     assert len(received) == 7
-    assert "CEF:0|ConsultantWorks|AIControlPlane|1.0|ai.dlp.match|" in received[0]
+    assert "CEF:0|ConsultantWorks|Gyrai|1.0|ai.dlp.match|" in received[0]
     assert "cs2=AICP-001" in received[0] and "act=block" in received[0] and "msg=r\\=1" in received[0]  # '=' escaped

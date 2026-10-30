@@ -134,7 +134,7 @@ class SyslogCEFOutput(Output):
             "externalId": e["event_id"], "msg": d.get("reason", ""),
         }
         ext_s = " ".join(f"{k}={self._esc(v)}" for k, v in ext.items() if v != "")
-        return f"CEF:0|ConsultantWorks|AIControlPlane|1.0|{e['event_type']}|{e['event_type']}|{sev}|{ext_s}"
+        return f"CEF:0|ConsultantWorks|Gyrai|1.0|{e['event_type']}|{e['event_type']}|{sev}|{ext_s}"
 
     def send(self, events):
         ts = datetime.now(timezone.utc).strftime("%b %d %H:%M:%S")

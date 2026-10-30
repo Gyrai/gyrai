@@ -28,6 +28,10 @@ git commit -s -m "Describe the change"
 
 By signing off you confirm that you wrote the change or have the right to submit it under the project's license.
 
+## Code of conduct
+
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By taking part you agree to abide by it. Report problems to jrs@consultant.works.
+
 ## License
 
 By contributing you agree that your contributions are licensed under the Apache License 2.0, the same as the project.

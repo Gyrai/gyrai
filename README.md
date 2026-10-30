@@ -151,6 +151,10 @@ Then in the repo settings: protect `main` (require PR + passing CI), enable Depe
 | 0.5 | Presidio + local classifier DLP, streaming egress scanning |
 | 1.0 | Helm chart, Iron Bank hardening, air-gap mode, AI RMF + 800-53 evidence packs |
 
+## Documentation
+
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) is a code map. It shows how the gateway, collectors, API and forwarder fit together, with flow and sequence diagrams that name the files and functions involved. Start there if you want to read or change the code.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). To report a security issue, see [SECURITY.md](SECURITY.md). To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
